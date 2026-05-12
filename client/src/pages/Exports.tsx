@@ -1,0 +1,130 @@
+import { useMemo, useState, useEffect } from "react";
+import { useParams } from "wouter";
+import { useDealStore } from "@/lib/acquisition/store";
+import { analyzeDeal } from "@/lib/acquisition";
+import { generateExport, type ExportKind } from "@/lib/acquisition/exports";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Streamdown } from "streamdown";
+import { Copy, Download } from "lucide-react";
+import { toast } from "sonner";
+
+const KINDS: Array<{ id: ExportKind; label: string; desc: string }> = [
+  { id: "ic-memo", label: "Investment Committee Memo", desc: "Full deterministic underwriting memo." },
+  { id: "lender-summary", label: "Lender Summary", desc: "Capital stack + DSCR package for the bank." },
+  { id: "broker-email", label: "Broker Email", desc: "Verdict-aware outreach to broker / seller." },
+  { id: "diligence-list", label: "Diligence Request List", desc: "Critical / important / nice-to-have." },
+  { id: "loi-strategy", label: "LOI Strategy", desc: "Anchor + structure recommendation." },
+  { id: "kill-memo", label: "Kill Memo", desc: "Documented pass — only when verdict is KILL." },
+];
+
+export default function Exports() {
+  const params = useParams<{ id?: string }>();
+  const { deals, assumptions } = useDealStore();
+  const [dealId, setDealId] = useState<string>(params.id ?? deals.find((d) => !d.isTest)?.id ?? "");
+  const [kind, setKind] = useState<ExportKind>("ic-memo");
+
+  useEffect(() => {
+    if (params.id) setDealId(params.id);
+  }, [params.id]);
+
+  const deal = useMemo(() => deals.find((d) => d.id === dealId), [deals, dealId]);
+  const analysis = useMemo(
+    () => (deal ? analyzeDeal(deal, assumptions) : null),
+    [deal, assumptions],
+  );
+  const payload = useMemo(
+    () => (analysis ? generateExport(kind, analysis) : null),
+    [analysis, kind],
+  );
+
+  function copy() {
+    if (!payload) return;
+    navigator.clipboard.writeText(payload.content);
+    toast.success("Copied to clipboard");
+  }
+  function download() {
+    if (!payload) return;
+    const blob = new Blob([payload.content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = payload.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="metric-label">Exports</div>
+          <h1 className="font-display text-3xl font-semibold mt-1">Buyer-grade deliverables</h1>
+          <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
+            Every export is generated from the verified DealAnalysis. Missing
+            data appears literally as "missing" — nothing is invented.
+          </p>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <aside className="panel p-5 lg:col-span-1 flex flex-col gap-4">
+          <div>
+            <div className="metric-label mb-1">Deal</div>
+            <Select value={dealId} onValueChange={setDealId}>
+              <SelectTrigger><SelectValue placeholder="Select deal" /></SelectTrigger>
+              <SelectContent>
+                {deals.map((d) => (
+                  <SelectItem key={d.id} value={d.id ?? ""}>
+                    {d.companyName}{d.isDemo ? " (demo)" : d.isTest ? " (test)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <div className="metric-label mb-2">Export type</div>
+            <div className="flex flex-col gap-1.5">
+              {KINDS.map((k) => (
+                <button
+                  key={k.id}
+                  onClick={() => setKind(k.id)}
+                  className={`text-left p-3 rounded-lg border transition ${
+                    kind === k.id ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-muted/40"
+                  }`}
+                >
+                  <div className="text-sm font-medium">{k.label}</div>
+                  <div className={`text-[11px] ${kind === k.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{k.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <section className="panel p-0 lg:col-span-3 overflow-hidden flex flex-col">
+          {payload ? (
+            <>
+              <div className="flex items-center justify-between border-b border-border px-5 py-3">
+                <div>
+                  <div className="font-semibold">{payload.title}</div>
+                  <div className="text-[11px] text-muted-foreground font-mono">{payload.filename}</div>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="bg-card" onClick={copy}><Copy className="size-4 mr-1.5" /> Copy</Button>
+                  <Button onClick={download}><Download className="size-4 mr-1.5" /> Download .md</Button>
+                </div>
+              </div>
+              <div className="prose prose-sm dark:prose-invert max-w-none p-6 overflow-auto">
+                <Streamdown>{payload.content}</Streamdown>
+              </div>
+            </>
+          ) : (
+            <div className="p-10 text-center text-muted-foreground text-sm">
+              Pick a deal to preview the export.
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
