@@ -102,11 +102,20 @@ export default function DealAnalyzer() {
           <h1 className="font-display text-3xl font-semibold mt-1">
             {form.companyName || "New deal"}
           </h1>
-          <div className="flex items-center gap-2 mt-3">
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
             <VerdictPill verdict={analysis.verdict.verdict} size="md" />
             <DscrPill label={`DSCR after standby ${analysis.dscrPair.afterStandby.display}`} value={analysis.dscrPair.afterStandby.value} />
             <span className="text-xs font-mono px-2 py-1 rounded border border-border bg-card">
-              Score {Math.round(analysis.score.score)}/100 · {analysis.score.bucket}
+              {analysis.scoreLabel} {Math.round(analysis.score.score)}/100 · {analysis.score.bucket}
+            </span>
+            <span className={`text-xs font-mono px-2 py-1 rounded border ${
+              analysis.verdict.confidence === "high"
+                ? "border-emerald-300/60 bg-emerald-50/60 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
+                : analysis.verdict.confidence === "medium"
+                  ? "border-amber-300/60 bg-amber-50/60 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                  : "border-rose-300/60 bg-rose-50/60 text-rose-800 dark:bg-rose-950/30 dark:text-rose-300"
+            }`}>
+              Confidence: {analysis.verdict.confidence}
             </span>
           </div>
         </div>
@@ -255,7 +264,11 @@ export default function DealAnalyzer() {
               <Metric label="EBITDA margin" value={analysis.ebitdaMargin.display} status={analysis.ebitdaMargin.status} />
               <Metric label="SDE margin" value={analysis.sdeMargin.display} status={analysis.sdeMargin.status} />
               <Metric label="Purchase price used" value={fmtCurrencyExact(analysis.capitalStack.purchasePriceUsed)} status={analysis.capitalStack.purchasePriceSource === "missing" ? "missing" : "actual"} />
-              <Metric label="Benchmark band" value={analysis.valuation.benchmarkBandLabel} />
+              <Metric
+                label={`Benchmark band${analysis.valuation.compatibility === "reference_only" ? " (reference only)" : analysis.valuation.compatibility === "unavailable" ? " (unavailable)" : ""}`}
+                value={analysis.valuation.benchmarkBandLabel}
+                status={analysis.valuation.compatibility === "basis_match" ? "actual" : "missing"}
+              />
             </div>
           </div>
 
@@ -324,28 +337,52 @@ export default function DealAnalyzer() {
 
           {/* Valuation band */}
           <div className="panel p-6">
-            <h2 className="font-display text-lg font-semibold mb-3">Valuation vs benchmark</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-lg font-semibold">Valuation vs benchmark</h2>
+              <span className={`text-[11px] uppercase tracking-wider px-2 py-1 rounded ${
+                analysis.valuation.compatibility === "basis_match"
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  : analysis.valuation.compatibility === "reference_only"
+                    ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                    : "bg-muted text-muted-foreground"
+              }`}>
+                {analysis.valuation.compatibility === "basis_match" && `Comparable — ${analysis.valuation.benchmark?.basis} basis match`}
+                {analysis.valuation.compatibility === "reference_only" && `Reference only — ${analysis.valuation.benchmark?.basis} band, ${analysis.earningsBasis} earnings`}
+                {analysis.valuation.compatibility === "unavailable" && "Benchmark unavailable"}
+              </span>
+            </div>
             {analysis.valuation.benchmark ? (
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                  <Metric label="Benchmark median" value={fmtCurrencyExact(analysis.valuation.benchmarkMedianValue)} />
-                  <Metric label="Benchmark low" value={fmtCurrencyExact(analysis.valuation.benchmarkLowValue)} />
-                  <Metric label="Benchmark high" value={fmtCurrencyExact(analysis.valuation.benchmarkHighValue)} />
-                  <Metric label="Gap vs asking" value={fmtCurrencyExact(analysis.valuation.valueGapVsAsking)} />
+                  <Metric label={`Benchmark median (${analysis.valuation.benchmark.basis})`} value={fmtCurrencyExact(analysis.valuation.benchmarkMedianValue)} />
+                  <Metric label={`Benchmark low (${analysis.valuation.benchmark.basis})`} value={fmtCurrencyExact(analysis.valuation.benchmarkLowValue)} />
+                  <Metric label={`Benchmark high (${analysis.valuation.benchmark.basis})`} value={fmtCurrencyExact(analysis.valuation.benchmarkHighValue)} />
+                  <Metric
+                    label="Gap vs asking"
+                    value={analysis.valuation.compatibility === "basis_match" ? fmtCurrencyExact(analysis.valuation.valueGapVsAsking) : "n/a"}
+                    status={analysis.valuation.compatibility === "basis_match" ? "actual" : "missing"}
+                  />
                 </div>
-                <BandTrack
-                  low={analysis.valuation.benchmark.low}
-                  median={analysis.valuation.benchmark.median}
-                  high={analysis.valuation.benchmark.high}
-                  current={
-                    analysis.earningsBasis === "EBITDA"
-                      ? analysis.evToEBITDA.value
-                      : analysis.evToSDE.value
-                  }
-                />
+                {analysis.valuation.compatibility === "basis_match" ? (
+                  <BandTrack
+                    low={analysis.valuation.benchmark.low}
+                    median={analysis.valuation.benchmark.median}
+                    high={analysis.valuation.benchmark.high}
+                    current={analysis.valuation.comparisonMultiple.value}
+                  />
+                ) : (
+                  <div className="rounded-lg border border-amber-300/60 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                    <AlertTriangle className="size-4 mt-0.5" />
+                    <span>
+                      {analysis.valuation.compatibility === "reference_only"
+                        ? `This deal's earnings are reported as ${analysis.earningsBasis}, but the only benchmark we have for ${analysis.valuation.benchmark.industryLabel} is in ${analysis.valuation.benchmark.basis}. The band is shown for reference — it does NOT score this deal and is not used to set band position.`
+                        : "No benchmark band is available for this combination of industry and earnings basis."}
+                    </span>
+                  </div>
+                )}
                 {analysis.valuation.warnings.map((w) => (
-                  <div key={w} className="mt-3 text-xs text-amber-700 flex items-center gap-1.5">
-                    <AlertTriangle className="size-3" /> {w}
+                  <div key={w} className="mt-3 text-xs text-amber-700 flex items-start gap-1.5">
+                    <AlertTriangle className="size-3 mt-0.5" /> <span>{w}</span>
                   </div>
                 ))}
               </>
@@ -359,7 +396,19 @@ export default function DealAnalyzer() {
           {/* Risk + scoring + missing data */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="panel p-6">
-              <h2 className="font-display text-lg font-semibold mb-3">Risk factors</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-display text-lg font-semibold">Risk factors</h2>
+                <span className={`text-[11px] uppercase tracking-wider px-2 py-1 rounded ${
+                  analysis.risk.riskConfidence === "high"
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : analysis.risk.riskConfidence === "medium"
+                      ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                      : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                }`}>
+                  Risk confidence: {analysis.risk.riskConfidence}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">{analysis.risk.riskCompletenessLabel}</p>
               <ul className="flex flex-col gap-2">
                 {analysis.risk.factors.map((f) => (
                   <li key={f.key} className="flex items-start justify-between gap-3 border-b border-border/60 last:border-0 pb-2 last:pb-0">
@@ -377,9 +426,18 @@ export default function DealAnalyzer() {
             </div>
             <div className="panel p-6">
               <h2 className="font-display text-lg font-semibold mb-3">Deterministic score</h2>
-              <div className="flex items-baseline gap-3 mb-3">
+              <div className="flex items-baseline gap-3 mb-1">
                 <div className="font-display text-4xl font-semibold">{Math.round(analysis.score.score)}</div>
                 <div className="text-sm text-muted-foreground">/ 100 · {analysis.score.bucket}</div>
+              </div>
+              <div className="text-xs text-muted-foreground mb-3">
+                <span className="font-semibold">{analysis.scoreLabel}</span>
+                {analysis.verdict.isPreliminary && (
+                  <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                    Preliminary · confidence {analysis.verdict.confidence}
+                  </span>
+                )}
+                <div className="mt-1">{analysis.verdict.confidenceReason}</div>
               </div>
               <ul className="text-xs flex flex-col gap-1.5">
                 {analysis.score.contributions.map((c) => (
@@ -424,6 +482,12 @@ export default function DealAnalyzer() {
               )}
               <div className="mt-3 text-xs text-muted-foreground">
                 Confidence: <span className="font-semibold">{analysis.verdict.confidence}</span>
+                {analysis.verdict.isPreliminary && (
+                  <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                    Preliminary
+                  </span>
+                )}
+                <div className="mt-1">{analysis.verdict.confidenceReason}</div>
               </div>
               {analysis.nextActions.length > 0 && (
                 <div className="mt-4">

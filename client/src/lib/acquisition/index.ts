@@ -16,7 +16,7 @@ import {
   selectEarnings,
   selectPurchasePrice,
 } from "./dealMath";
-import { getBenchmarkMultiple } from "./benchmarkMultiples";
+import { getBenchmarkPair } from "./benchmarkMultiples";
 import { scoreRisk } from "./riskScoring";
 import { detectMissingData } from "./missingData";
 import { scoreDeal } from "./dealScoring";
@@ -32,12 +32,33 @@ import type {
 
 function valuationFor(
   input: DealInput,
-  evMultiple: MetricResult,
+  evEbitda: MetricResult,
+  evSde: MetricResult,
   earningsBasis: DealAnalysis["earningsBasis"],
   earningsUsed: number | null,
 ): ValuationResult {
-  const benchmark = input.industry ? getBenchmarkMultiple(input.industry) : null;
+  const pair = input.industry ? getBenchmarkPair(input.industry) : { ebitda: null, sde: null };
   const warnings: string[] = [];
+
+  // Choose the benchmark that MATCHES the deal's earnings basis. This is the
+  // direct fix for Issue 1: a 3.45x EBITDA multiple must never be silently
+  // compared against a 2x–4x SDE band.
+  const matchingBenchmark =
+    earningsBasis === "EBITDA" ? pair.ebitda : earningsBasis === "SDE" ? pair.sde : null;
+  const fallbackBenchmark =
+    earningsBasis === "EBITDA" ? pair.sde : earningsBasis === "SDE" ? pair.ebitda : null;
+
+  // The multiple used for band comparison must always match the benchmark's
+  // basis (otherwise we are comparing apples to oranges).
+  const benchmark = matchingBenchmark ?? fallbackBenchmark ?? null;
+  const comparisonMultiple: MetricResult =
+    benchmark === null
+      ? { ...evEbitda, value: null, status: "missing", display: "missing" }
+      : benchmark.basis === "EBITDA"
+        ? evEbitda
+        : evSde;
+
+  const currentImpliedMultiple = earningsBasis === "EBITDA" ? evEbitda : evSde;
 
   if (earningsUsed === null || earningsUsed <= 0 || earningsBasis === "missing") {
     return {
@@ -45,24 +66,46 @@ function valuationFor(
       earningsBasis,
       earningsUsed,
       benchmark,
-      currentImpliedMultiple: evMultiple,
+      comparisonMultiple,
+      currentImpliedMultiple,
       benchmarkLowValue: null,
       benchmarkMedianValue: null,
       benchmarkHighValue: null,
       benchmarkBandLabel: benchmark
         ? `${benchmark.low}x – ${benchmark.high}x (${benchmark.basis})`
         : "—",
+      compatibility: "unavailable",
       bandPosition: "missing",
       valueGapVsAsking: null,
       warnings,
     };
   }
+
+  // Determine compatibility.
+  let compatibility: ValuationResult["compatibility"];
   if (!benchmark) {
-    warnings.push("Industry not provided — benchmark band unavailable.");
-  } else if (benchmark.basis !== earningsBasis) {
+    compatibility = "unavailable";
+    warnings.push("Industry not provided or unmatched — benchmark band unavailable.");
+  } else if (matchingBenchmark) {
+    compatibility = "basis_match";
+  } else {
+    // Only the opposite-basis benchmark exists. We refuse to treat it as a
+    // direct comparison.
+    compatibility = "reference_only";
     warnings.push(
-      `Benchmark uses ${benchmark.basis} multiples but earnings basis here is ${earningsBasis}. Compare with caution.`,
+      `Benchmark for ${input.industry} is only available in ${benchmark.basis}, but earnings here are reported as ${earningsBasis}. Showing the band for reference only — band position is not used to score this deal.`,
     );
+  }
+
+  // Comparison multiple status: if the comparison multiple itself is missing
+  // (e.g. SDE benchmark but SDE not provided), surface that explicitly.
+  const compMultiplePresent =
+    comparisonMultiple.value !== null && Number.isFinite(comparisonMultiple.value);
+  if (compatibility === "basis_match" && !compMultiplePresent) {
+    warnings.push(
+      `${benchmark!.basis} benchmark exists but EV/${benchmark!.basis} could not be calculated (${benchmark!.basis} earnings missing).`,
+    );
+    compatibility = "reference_only";
   }
 
   const lowVal = benchmark ? benchmark.low * earningsUsed : null;
@@ -70,14 +113,17 @@ function valuationFor(
   const highVal = benchmark ? benchmark.high * earningsUsed : null;
 
   let bandPosition: ValuationResult["bandPosition"] = "missing";
-  if (benchmark && evMultiple.value !== null) {
-    const m = evMultiple.value;
+  if (compatibility === "basis_match" && benchmark && comparisonMultiple.value !== null) {
+    const m = comparisonMultiple.value;
     if (m < benchmark.low) bandPosition = "below_low";
     else if (m > benchmark.high) bandPosition = "above_high";
     else if (m > benchmark.median) bandPosition = "above_median";
     else if (m < benchmark.median) bandPosition = "below_median";
     else bandPosition = "in_band";
   }
+  // For reference_only or unavailable, bandPosition stays "missing" so the
+  // scoring engine awards no valuation points — exactly what acceptance
+  // criterion #1 requires.
 
   const askingOrPP =
     typeof input.purchasePrice === "number"
@@ -86,21 +132,26 @@ function valuationFor(
         ? input.askingPrice
         : null;
 
+  // Value gap is only meaningful when the benchmark is directly comparable.
   const valueGapVsAsking =
-    medianVal !== null && askingOrPP !== null ? medianVal - askingOrPP : null;
+    compatibility === "basis_match" && medianVal !== null && askingOrPP !== null
+      ? medianVal - askingOrPP
+      : null;
 
   return {
-    status: "actual",
+    status: compatibility === "basis_match" ? "actual" : "missing",
     earningsBasis,
     earningsUsed,
     benchmark,
-    currentImpliedMultiple: evMultiple,
+    comparisonMultiple,
+    currentImpliedMultiple,
     benchmarkLowValue: lowVal,
     benchmarkMedianValue: medianVal,
     benchmarkHighValue: highVal,
     benchmarkBandLabel: benchmark
       ? `${benchmark.low}x – ${benchmark.high}x (${benchmark.basis})`
       : "—",
+    compatibility,
     bandPosition,
     valueGapVsAsking,
     warnings,
@@ -111,14 +162,10 @@ function dscrPairFor(
   earningsUsed: number | null,
   capitalStack: ReturnType<typeof buildCapitalStack>,
 ): DscrPair {
-  // After standby: full debt service (SBA + Seller note).
-  // During standby: SBA only (seller note debt service excluded).
   const afterDS = capitalStack.totalAnnualDebtService;
   const duringDS = capitalStack.totalAnnualDebtServiceDuringStandby;
-
   const after = dscrFromEarnings(earningsUsed, afterDS);
   const during = dscrFromEarnings(earningsUsed, duringDS);
-  // Annotate which scenario each result represents.
   const annotateAfter: MetricResult = {
     ...after,
     formula: "Earnings / (SBA Debt Service + Seller Note Debt Service)",
@@ -145,16 +192,10 @@ export function analyzeDeal(
   const capitalStack = buildCapitalStack(input, assumptions);
   const dscrPair = dscrPairFor(earnings.value, capitalStack);
 
-  // Primary DSCR for top-line displays: when seller note is in standby, show
-  // "During Standby" as the cautious number; otherwise show the After Standby.
-  // We always expose both via dscrPair.
-  const sellerNoteInStandby = assumptions.sellerNoteStandbyMonths > 0;
-  const dscrPrimary: MetricResult = sellerNoteInStandby
-    ? dscrPair.afterStandby
-    : dscrPair.afterStandby;
+  // Primary DSCR for top-line displays uses the cautious post-standby figure.
+  const dscrPrimary: MetricResult = dscrPair.afterStandby;
 
-  const evMultiple = earnings.basis === "EBITDA" ? evEbitda : evSde;
-  const valuation = valuationFor(input, evMultiple, earnings.basis, earnings.value);
+  const valuation = valuationFor(input, evEbitda, evSde, earnings.basis, earnings.value);
 
   const risk = scoreRisk(input);
   const missingData = detectMissingData(input);
@@ -190,7 +231,10 @@ export function analyzeDeal(
       rationale: "",
       blockers: [],
       confidence: "low",
+      isPreliminary: true,
+      confidenceReason: "Engine has not yet finalized the analysis.",
     },
+    scoreLabel: "Score",
     nextActions: [],
     assumptions,
   };
@@ -200,15 +244,13 @@ export function analyzeDeal(
 
   const verdict = computeVerdict(partial);
   partial.verdict = verdict;
+  partial.scoreLabel = verdict.isPreliminary ? "Preliminary Score" : "Score";
 
   partial.nextActions = nextActionsFor(partial);
   return partial;
 }
 
-export {
-  fmtCurrencyExact,
-  fmtMultiple,
-};
+export { fmtCurrencyExact, fmtMultiple };
 
 export * from "./types";
 export * from "./benchmarkMultiples";

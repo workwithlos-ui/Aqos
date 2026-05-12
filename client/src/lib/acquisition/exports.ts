@@ -24,16 +24,23 @@ export interface ExportPayload {
 function header(a: DealAnalysis, title: string): string {
   const today = new Date().toISOString().slice(0, 10);
   const tag = a.isDemo ? "[DEMO]" : a.isTest ? "[TEST]" : "";
-  return `# ${title} — ${a.companyName} ${tag}\n\nGenerated: ${today}\nDeal Verdict: **${a.verdict.verdict}**\nDeterministic Score: ${Math.round(a.score.score)} / 100 (${a.score.bucket})\nConfidence: ${a.verdict.confidence}\n`;
+  const preliminary = a.verdict.isPreliminary ? " *(PRELIMINARY)*" : "";
+  return `# ${title} — ${a.companyName} ${tag}\n\nGenerated: ${today}\nDeal Verdict: **${a.verdict.verdict}**${preliminary}\n${a.scoreLabel}: ${Math.round(a.score.score)} / 100 (${a.score.bucket})\nConfidence: ${a.verdict.confidence} — ${a.verdict.confidenceReason}\n`;
 }
 
 export function generateICMemo(a: DealAnalysis): ExportPayload {
   const lines: string[] = [];
   lines.push(header(a, "Investment Committee Memo"));
   lines.push(`## Snapshot\n- Industry: ${dash(a.valuation.benchmark?.industryLabel)}\n- Revenue: ${money(a.ebitdaMargin.inputs.Revenue as number ?? a.sdeMargin.inputs.Revenue as number)}\n- Earnings Basis: ${a.earningsBasis}\n- Earnings: ${money(a.earningsUsed)}\n- Asking / Purchase Price (used): ${money(a.capitalStack.purchasePriceUsed)} (source: ${a.capitalStack.purchasePriceSource})\n- EV/EBITDA: ${mult(a.evToEBITDA.value)}\n- EV/SDE: ${mult(a.evToSDE.value)}\n- EBITDA Margin: ${a.ebitdaMargin.display}\n- SDE Margin: ${a.sdeMargin.display}`);
-  lines.push(`## Valuation Band\n- Benchmark: ${dash(a.valuation.benchmark?.industryLabel)} — ${a.valuation.benchmarkBandLabel}\n- Benchmark median implied value: ${money(a.valuation.benchmarkMedianValue)}\n- Gap vs asking price: ${money(a.valuation.valueGapVsAsking)}\n- Band position: ${a.valuation.bandPosition.replace("_", " ")}`);
+  const compatibilityLabel =
+    a.valuation.compatibility === "basis_match"
+      ? `Direct comparison (${a.valuation.benchmark?.basis} band vs ${a.earningsBasis} earnings)`
+      : a.valuation.compatibility === "reference_only"
+        ? `Reference only — ${a.valuation.benchmark?.basis} band shown but ${a.earningsBasis} earnings cannot be compared like-for-like.`
+        : "Benchmark unavailable";
+  lines.push(`## Valuation Band\n- Benchmark: ${dash(a.valuation.benchmark?.industryLabel)} — ${a.valuation.benchmarkBandLabel}\n- Comparability: ${compatibilityLabel}\n- Benchmark median implied value: ${a.valuation.compatibility === "basis_match" ? money(a.valuation.benchmarkMedianValue) : `${money(a.valuation.benchmarkMedianValue)} (reference only)`}\n- Gap vs asking price: ${a.valuation.compatibility === "basis_match" ? money(a.valuation.valueGapVsAsking) : "n/a (basis mismatch)"}\n- Band position: ${a.valuation.bandPosition.replace("_", " ")}`);
   lines.push(`## Capital Stack & Debt Service\n- SBA Loan (${(a.assumptions.sbaLoanPct * 100).toFixed(0)}%): ${money(a.capitalStack.sba.amount)} @ ${(a.assumptions.sbaInterestRate * 100).toFixed(2)}% / ${a.assumptions.sbaTermYears}yr → annual debt service ${money(a.capitalStack.sba.annualDebtService)}\n- Seller Note (${(a.assumptions.sellerNotePct * 100).toFixed(0)}%): ${money(a.capitalStack.sellerNote.amount)} @ ${(a.assumptions.sellerNoteRate * 100).toFixed(2)}% / ${a.assumptions.sellerNoteTermYears}yr, standby ${a.assumptions.sellerNoteStandbyMonths}mo → annual debt service ${money(a.capitalStack.sellerNote.annualDebtService)}\n- Buyer Equity (${(a.assumptions.buyerEquityPct * 100).toFixed(0)}%): ${money(a.capitalStack.buyerEquity.amount)}\n- Total sources: ${money(a.capitalStack.totalSources)} (Δ vs price ${money(a.capitalStack.differenceVsPurchasePrice)})\n- Total annual debt service after standby: ${money(a.capitalStack.totalAnnualDebtService)}\n- During standby (seller note excluded): ${money(a.capitalStack.totalAnnualDebtServiceDuringStandby)}\n- DSCR after standby: ${a.dscrPair.afterStandby.display}\n- DSCR during standby: ${a.dscrPair.duringStandby.display}`);
-  lines.push(`## Risk\n${a.risk.factors.map((f) => `- ${f.label}: ${f.score === null ? "missing" : f.score} (${f.level}) — ${f.rationale}`).join("\n")}`);
+  lines.push(`## Risk (${a.risk.riskCompletenessLabel} Risk confidence: ${a.risk.riskConfidence}.)\n${a.risk.factors.map((f) => `- ${f.label}: ${f.score === null ? "missing" : f.score} (${f.level}) — ${f.rationale}`).join("\n")}`);
   lines.push(`## Verdict\n**${a.verdict.verdict}** — ${a.verdict.rationale}`);
   if (a.verdict.blockers.length)
     lines.push(`Blockers: ${a.verdict.blockers.join("; ")}`);
@@ -117,10 +124,19 @@ export function generateLOIStrategy(a: DealAnalysis): ExportPayload {
   const low = a.valuation.benchmarkLowValue;
   const high = a.valuation.benchmarkHighValue;
   lines.push(`## Price anchor (deterministic)\n- Benchmark low: ${money(low)}\n- Benchmark median: ${money(median)}\n- Benchmark high: ${money(high)}\n- Current asking: ${money(a.capitalStack.purchasePriceUsed)}\n- Gap (median − asking): ${money(a.valuation.valueGapVsAsking)}`);
-  if (a.verdict.verdict === "RENEGOTIATE" && median !== null) {
+  if (
+    a.verdict.verdict === "RENEGOTIATE" &&
+    median !== null &&
+    a.valuation.compatibility === "basis_match"
+  ) {
     lines.push(`## Recommended opening offer\nAnchor near benchmark median (${money(median)}), with seller note ${(a.assumptions.sellerNotePct * 100).toFixed(0)}% on ${a.assumptions.sellerNoteStandbyMonths}mo standby, SBA ${(a.assumptions.sbaLoanPct * 100).toFixed(0)}%, buyer equity ${(a.assumptions.buyerEquityPct * 100).toFixed(0)}%.`);
-  } else if (a.verdict.verdict === "PURSUE" || a.verdict.verdict === "PURSUE WITH CAUTION") {
+  } else if (
+    (a.verdict.verdict === "PURSUE" || a.verdict.verdict === "PURSUE WITH CAUTION") &&
+    !a.verdict.isPreliminary
+  ) {
     lines.push(`## Recommended opening offer\nMatch current asking price (${money(a.capitalStack.purchasePriceUsed)}) with disciplined diligence contingencies. DSCR after standby: ${a.dscrPair.afterStandby.display}.`);
+  } else if (a.verdict.isPreliminary) {
+    lines.push(`## Recommended action\nDo NOT submit LOI yet — score is preliminary (confidence: ${a.verdict.confidence}). ${a.verdict.confidenceReason} Close the diligence and risk gaps first.`);
   } else {
     lines.push(`## Recommended action\nDo not submit LOI yet — verdict is ${a.verdict.verdict}.`);
   }

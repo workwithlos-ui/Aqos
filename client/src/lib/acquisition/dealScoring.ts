@@ -146,22 +146,42 @@ function profitabilityPoints(a: ScoreInputs["analysis"]): DealScoreContribution 
 function riskPoints(a: ScoreInputs["analysis"]): DealScoreContribution {
   const available = 20;
   const avg = a.risk.averageScore;
-  if (avg === null) {
+  const completeness = a.risk.completeness;
+  const missingCount = a.risk.missingCount;
+  const totalFactors = a.risk.totalFactors || 5;
+
+  // No factors scored at all — the engine refuses to award meaningful risk
+  // points. The buyer must supply at least three factors before risk can be
+  // treated as a real signal.
+  if (avg === null || a.risk.riskConfidence === "insufficient") {
     return {
       category: "Risk",
-      earned: 8,
+      earned: 0,
       available,
-      notes: "No risk signals provided — neutral allocation.",
+      notes: `Risk score incomplete — ${missingCount} of ${totalFactors} factors missing. No risk points awarded.`,
     };
   }
-  // 1=low risk → 20 pts, 5=critical → 0 pts.
-  const earned = Math.max(0, Math.min(20, Math.round((5 - avg) * 5)));
-  return {
-    category: "Risk",
-    earned,
-    available,
-    notes: `Average risk score ${avg.toFixed(2)} of 5.${a.risk.hasCritical ? " Critical risk present." : ""}`,
-  };
+
+  // Convert avg (1=low risk → 5=critical) to a 0–20 scale.
+  const baseEarned = Math.max(0, Math.min(20, Math.round((5 - avg) * 5)));
+
+  // Apply a confidence haircut so a buyer who only scored 2 of 5 factors does
+  // NOT get the same Risk credit as one who scored all 5. This is the direct
+  // fix for Issue 2 ("15/20 with 4 missing”).
+  const haircutFactor =
+    a.risk.riskConfidence === "high"
+      ? 1
+      : a.risk.riskConfidence === "medium"
+        ? 0.6
+        : 0.35; // low
+  const earned = Math.round(baseEarned * haircutFactor);
+
+  const note =
+    haircutFactor === 1
+      ? `Average risk ${avg.toFixed(2)} of 5 across all ${totalFactors} factors.${a.risk.hasCritical ? " Critical risk present." : ""}`
+      : `Average risk ${avg.toFixed(2)} of 5 across ${totalFactors - missingCount}/${totalFactors} factors. Risk credit reduced by ${(100 - haircutFactor * 100).toFixed(0)}% because ${missingCount} factor${missingCount === 1 ? " is" : "s are"} missing.`;
+
+  return { category: "Risk", earned, available, notes: note };
 }
 
 function diligencePoints(missing: MissingDataResult): DealScoreContribution {
@@ -229,6 +249,21 @@ export function scoreDeal(args: ScoreInputs): DealScoreResult {
     cap = Math.min(cap, 65);
     caps.push("Critical risk factor present — score capped at 65.");
   }
+  // Issue 4: a deal with many missing important diligence/data items should
+  // not be eligible for top scores. Cap the headline number to keep buyers
+  // honest until the gaps are closed.
+  const importantMissing = analysis.missingData.importantMissing.length;
+  if (importantMissing >= 8) {
+    cap = Math.min(cap, 65);
+    caps.push(`${importantMissing} important diligence items missing — score capped at 65.`);
+  } else if (importantMissing >= 5) {
+    cap = Math.min(cap, 75);
+    caps.push(`${importantMissing} important diligence items missing — score capped at 75.`);
+  }
+  if (analysis.risk.riskConfidence === "insufficient" || analysis.risk.riskConfidence === "low") {
+    cap = Math.min(cap, 75);
+    caps.push("Risk panel is incomplete — score capped at 75 until more risk factors are scored.");
+  }
 
   let score = Math.min(raw, cap);
 
@@ -273,10 +308,19 @@ export function scoreDeal(args: ScoreInputs): DealScoreResult {
     score >= 75 &&
     analysis.dscr.value !== null &&
     analysis.dscr.value >= 1.25 &&
-    !analysis.risk.hasCritical
+    !analysis.risk.hasCritical &&
+    // Issue 4: Acquisition Priority requires risk to be scored AND a
+    // manageable diligence backlog. Otherwise the headline math could be
+    // hiding fundamental gaps.
+    analysis.missingData.canRankAsAcquisitionPriority &&
+    (analysis.risk.riskConfidence === "high" || analysis.risk.riskConfidence === "medium")
   )
     bucket = "Acquisition Priority";
-  else if (analysis.missingData.importantMissing.length > 3 || analysis.risk.hasCritical)
+  else if (
+    analysis.missingData.importantMissing.length > 3 ||
+    analysis.risk.hasCritical ||
+    analysis.risk.riskConfidence === "insufficient"
+  )
     bucket = "Diligence Priority";
   else if (
     analysis.dscr.value !== null &&

@@ -177,11 +177,27 @@ export default function Pipeline() {
                   <div className="col-span-1 flex justify-center">
                     <DscrPill label={a.dscr.display} value={a.dscr.value} />
                   </div>
-                  <div className="col-span-1 text-center text-xs">
-                    {a.risk.averageScore === null ? "—" : `${a.risk.averageScore.toFixed(1)}/5`}
+                  <div
+                    className="col-span-1 text-center text-xs"
+                    title={a.risk.riskCompletenessLabel}
+                  >
+                    {a.risk.averageScore === null
+                      ? "—"
+                      : `${a.risk.averageScore.toFixed(1)}/5`}
+                    {a.risk.missingCount > 0 && (
+                      <span className="text-amber-600 ml-0.5">*</span>
+                    )}
                   </div>
-                  <div className="col-span-1 text-center text-sm font-semibold">
-                    {Math.round(a.score.score)}
+                  <div
+                    className="col-span-1 text-center text-sm font-semibold flex flex-col items-center"
+                    title={a.verdict.confidenceReason}
+                  >
+                    <span>{Math.round(a.score.score)}</span>
+                    {a.verdict.isPreliminary && (
+                      <span className="text-[9px] uppercase tracking-wider text-amber-700 dark:text-amber-300 font-normal">
+                        prelim
+                      </span>
+                    )}
                   </div>
                   <div className="col-span-1 flex justify-end">
                     <div className="flex items-center gap-1.5">

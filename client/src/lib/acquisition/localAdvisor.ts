@@ -53,7 +53,26 @@ function fmtList(arr: string[], empty = "None"): string {
 }
 
 function dealLine(c: AdvisorDealContext): string {
-  return `${c.companyName} — verdict ${c.verdict} (${c.verdictConfidence}), score ${c.scoreOutOf100}/100, DSCR ${c.dscr.afterStandby}, ${c.earningsBasis} ${c.earnings}, multiple ${c.multipleEvEbitda !== "missing" ? c.multipleEvEbitda : c.multipleEvSde}`;
+  const tag = c.isPreliminary ? " *(preliminary)*" : "";
+  return `${c.companyName} — verdict ${c.verdict}${tag} (${c.verdictConfidence}), ${c.scoreLabel} ${c.scoreOutOf100}/100, DSCR ${c.dscr.afterStandby}, ${c.earningsBasis} ${c.earnings}, multiple ${c.multipleEvEbitda !== "missing" ? c.multipleEvEbitda : c.multipleEvSde}`;
+}
+
+function caveats(c: AdvisorDealContext): string[] {
+  const out: string[] = [];
+  if (c.isPreliminary) {
+    out.push(`Score is **preliminary** (${c.verdictConfidence} confidence) — ${c.verdictConfidenceReason}`);
+  }
+  if (c.benchmarkCompatibility === "reference_only") {
+    out.push(
+      `Benchmark caveat: ${c.benchmarkBand} is shown for reference only — the deal's earnings basis is ${c.earningsBasis} but the benchmark is in ${c.benchmarkBasis}. Not a like-for-like comparison.`,
+    );
+  } else if (c.benchmarkCompatibility === "unavailable") {
+    out.push("Benchmark caveat: no benchmark band available for this industry.");
+  }
+  if (c.riskConfidence === "insufficient" || c.riskConfidence === "low") {
+    out.push(`Risk caveat: ${c.riskCompletenessLabel} (risk confidence ${c.riskConfidence}).`);
+  }
+  return out;
 }
 
 export function answerAdvisor(
@@ -79,14 +98,17 @@ function answerForFocusedDeal(
 
   switch (intent) {
     case "what_to_offer":
-      answer = `Engine verdict: **${c.verdict}**. Benchmark band ${c.benchmarkBand}; current implied multiple ${c.multipleEvEbitda !== "missing" ? c.multipleEvEbitda : c.multipleEvSde}.`;
+      answer = `Engine verdict: **${c.verdict}**${c.isPreliminary ? " (preliminary — see caveats)" : ""}. Benchmark band ${c.benchmarkBand}; current implied multiple ${c.multipleEvEbitda !== "missing" ? c.multipleEvEbitda : c.multipleEvSde}.`;
       bullets.push(
         `Asking price (used): ${c.askingPrice}`,
         `Benchmark median implied value: ${c.benchmarkMedianImpliedValue}`,
         `Gap vs asking: ${c.benchmarkValueGapVsAsking}`,
-        c.verdict === "RENEGOTIATE"
+        c.verdict === "RENEGOTIATE" && c.benchmarkCompatibility === "basis_match"
           ? `Suggested anchor: ${c.benchmarkMedianImpliedValue} (benchmark median).`
-          : `Hold price discipline at or near asking — verdict is ${c.verdict}.`,
+          : c.isPreliminary
+            ? `Do NOT submit LOI yet — score is preliminary (${c.verdictConfidence} confidence).`
+            : `Hold price discipline at or near asking — verdict is ${c.verdict}.`,
+        ...caveats(c),
       );
       break;
     case "financeable":
@@ -130,12 +152,13 @@ function answerForFocusedDeal(
       );
       break;
     default:
-      answer = `**${c.verdict}** — ${c.verdictRationale}`;
+      answer = `**${c.verdict}**${c.isPreliminary ? " (preliminary)" : ""} — ${c.verdictRationale}`;
       bullets.push(
-        `Score: ${c.scoreOutOf100}/100 (${c.scoreBucket})`,
+        `${c.scoreLabel}: ${c.scoreOutOf100}/100 (${c.scoreBucket})`,
         `DSCR after standby: ${c.dscr.afterStandby} (${c.dscr.verdict})`,
         `Multiple: ${c.multipleEvEbitda !== "missing" ? c.multipleEvEbitda : c.multipleEvSde} vs ${c.benchmarkBand}`,
-        `Confidence: ${c.verdictConfidence}`,
+        `Confidence: ${c.verdictConfidence} — ${c.verdictConfidenceReason}`,
+        ...caveats(c),
       );
   }
   return {

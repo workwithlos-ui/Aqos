@@ -30,6 +30,8 @@ export interface AdvisorDealContext {
 
   benchmark: string;
   benchmarkBand: string;
+  benchmarkBasis: string;
+  benchmarkCompatibility: "basis_match" | "reference_only" | "unavailable";
   benchmarkMedianImpliedValue: string;
   benchmarkValueGapVsAsking: string;
   bandPosition: string;
@@ -57,8 +59,14 @@ export interface AdvisorDealContext {
 
   riskFactors: Array<{ label: string; score: string; level: string; rationale: string }>;
   riskHasCritical: boolean;
+  riskScored: number;
+  riskTotal: number;
+  riskCompletenessLabel: string;
+  riskConfidence: "high" | "medium" | "low" | "insufficient";
 
   scoreOutOf100: number;
+  scoreLabel: string;
+  isPreliminary: boolean;
   scoreBucket: DealAnalysis["score"]["bucket"];
   capsApplied: string[];
   scoreNotes: string[];
@@ -71,6 +79,7 @@ export interface AdvisorDealContext {
   verdictRationale: string;
   verdictBlockers: string[];
   verdictConfidence: DealAnalysis["verdict"]["confidence"];
+  verdictConfidenceReason: string;
 
   nextActions: string[];
 }
@@ -126,8 +135,16 @@ export function buildAdvisorDealContext(a: DealAnalysis): AdvisorDealContext {
     sdeMargin: a.sdeMargin.display,
     benchmark: benchmark ? `${benchmark.industryLabel} (${benchmark.basis}, confidence ${benchmark.confidence})` : "missing",
     benchmarkBand: a.valuation.benchmarkBandLabel,
-    benchmarkMedianImpliedValue: s(a.valuation.benchmarkMedianValue, "money"),
-    benchmarkValueGapVsAsking: s(a.valuation.valueGapVsAsking, "money"),
+    benchmarkBasis: benchmark?.basis ?? "missing",
+    benchmarkCompatibility: a.valuation.compatibility,
+    benchmarkMedianImpliedValue:
+      a.valuation.compatibility === "basis_match"
+        ? s(a.valuation.benchmarkMedianValue, "money")
+        : `${s(a.valuation.benchmarkMedianValue, "money")} (reference only — basis mismatch)`,
+    benchmarkValueGapVsAsking:
+      a.valuation.compatibility === "basis_match"
+        ? s(a.valuation.valueGapVsAsking, "money")
+        : "missing (basis mismatch)",
     bandPosition: a.valuation.bandPosition.replace("_", " "),
     capitalStack: {
       purchasePrice: s(a.capitalStack.purchasePriceUsed, "money"),
@@ -167,7 +184,13 @@ export function buildAdvisorDealContext(a: DealAnalysis): AdvisorDealContext {
       rationale: f.rationale,
     })),
     riskHasCritical: a.risk.hasCritical,
+    riskScored: a.risk.totalFactors - a.risk.missingCount,
+    riskTotal: a.risk.totalFactors,
+    riskCompletenessLabel: a.risk.riskCompletenessLabel,
+    riskConfidence: a.risk.riskConfidence,
     scoreOutOf100: Math.round(a.score.score),
+    scoreLabel: a.scoreLabel,
+    isPreliminary: a.verdict.isPreliminary,
     scoreBucket: a.score.bucket,
     capsApplied: a.score.capsApplied,
     scoreNotes: a.score.contributions.map((c) => `${c.category}: ${c.earned}/${c.available} — ${c.notes}`),
@@ -178,6 +201,7 @@ export function buildAdvisorDealContext(a: DealAnalysis): AdvisorDealContext {
     verdictRationale: a.verdict.rationale,
     verdictBlockers: a.verdict.blockers,
     verdictConfidence: a.verdict.confidence,
+    verdictConfidenceReason: a.verdict.confidenceReason,
     nextActions: a.nextActions,
   };
 }
@@ -215,10 +239,11 @@ You must not:
   • output NaN, Infinity, undefined, null, or fake confidence
 
 Response structure for every answer:
-  1. Verdict (use the engine verdict verbatim)
-  2. Why (interpret the rationale + score notes)
+  1. Verdict (use the engine verdict verbatim, and add "(PRELIMINARY)" when isPreliminary is true)
+  2. Why (interpret the rationale + score notes; use scoreLabel — "Preliminary Score" or "Score" — verbatim)
   3. Missing data (list verbatim)
   4. Next action (use the engine's nextActions list)
-  5. Risk (highest risk factor name + level)
-  6. Confidence (use the engine's verdictConfidence)
+  5. Risk (highest risk factor name + level; if riskConfidence is low or insufficient, also state riskCompletenessLabel)
+  6. Confidence (use the engine's verdictConfidence and quote verdictConfidenceReason)
+  7. Benchmark caveat (if benchmarkCompatibility is reference_only or unavailable, explicitly say the benchmark is NOT a like-for-like comparison)
 `;

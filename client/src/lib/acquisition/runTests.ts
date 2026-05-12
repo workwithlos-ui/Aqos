@@ -39,9 +39,16 @@ export interface SpecDefinition {
   input: DealInput;
   expect: {
     verdictIn?: Verdict[];
+    verdictNotIn?: Verdict[];
+    bucketNotIn?: Array<"Acquisition Priority" | "Diligence Priority" | "Watch" | "Kill/Pause" | "Scoring Review" | "Cannot Underwrite">;
     minScore?: number;
     maxScore?: number;
     dscrCondition?: "missing" | "below_one" | "at_or_above_125" | "any";
+    expectPreliminary?: boolean;
+    confidenceIn?: Array<"high" | "medium" | "low">;
+    benchmarkCompatibilityIn?: Array<"basis_match" | "reference_only" | "unavailable">;
+    riskConfidenceIn?: Array<"high" | "medium" | "low" | "insufficient">;
+    scoreLabelEquals?: "Preliminary Score" | "Score";
     capitalStackChecks?: Array<{
       assumptions: CapitalStackAssumptions;
       expectSba: number;
@@ -231,6 +238,8 @@ export const TEST_DEFINITIONS: SpecDefinition[] = [
     },
     expect: {
       verdictIn: ["RENEGOTIATE", "PAUSE", "DILIGENCE PRIORITY", "KILL"],
+      verdictNotIn: ["PURSUE"],
+      bucketNotIn: ["Acquisition Priority"],
       dscrCondition: "any",
     },
   },
@@ -332,6 +341,92 @@ export function runSingleSpec(def: SpecDefinition): SpecResult {
         def.expect.verdictIn.join(" / "),
         analysis.verdict.verdict,
         inSet,
+      ),
+    );
+  }
+
+  if (def.expect.verdictNotIn && def.expect.verdictNotIn.length > 0) {
+    const blocked = !def.expect.verdictNotIn.includes(analysis.verdict.verdict);
+    assertions.push(
+      assertion(
+        "Verdict NOT in forbidden set",
+        `not in ${def.expect.verdictNotIn.join(" / ")}`,
+        analysis.verdict.verdict,
+        blocked,
+      ),
+    );
+  }
+
+  if (def.expect.bucketNotIn && def.expect.bucketNotIn.length > 0) {
+    const okBucket = !def.expect.bucketNotIn.includes(
+      analysis.score.bucket as (typeof def.expect.bucketNotIn)[number],
+    );
+    assertions.push(
+      assertion(
+        "Bucket NOT in forbidden set",
+        `not in ${def.expect.bucketNotIn.join(" / ")}`,
+        analysis.score.bucket,
+        okBucket,
+      ),
+    );
+  }
+
+  if (def.expect.expectPreliminary !== undefined) {
+    assertions.push(
+      assertion(
+        def.expect.expectPreliminary ? "Verdict is preliminary" : "Verdict is final",
+        String(def.expect.expectPreliminary),
+        String(analysis.verdict.isPreliminary),
+        analysis.verdict.isPreliminary === def.expect.expectPreliminary,
+      ),
+    );
+  }
+
+  if (def.expect.scoreLabelEquals) {
+    assertions.push(
+      assertion(
+        "Score label",
+        def.expect.scoreLabelEquals,
+        analysis.scoreLabel,
+        analysis.scoreLabel === def.expect.scoreLabelEquals,
+      ),
+    );
+  }
+
+  if (def.expect.confidenceIn && def.expect.confidenceIn.length > 0) {
+    const okConf = def.expect.confidenceIn.includes(analysis.verdict.confidence);
+    assertions.push(
+      assertion(
+        "Verdict confidence in expected set",
+        def.expect.confidenceIn.join(" / "),
+        analysis.verdict.confidence,
+        okConf,
+      ),
+    );
+  }
+
+  if (def.expect.benchmarkCompatibilityIn && def.expect.benchmarkCompatibilityIn.length > 0) {
+    const okBench = def.expect.benchmarkCompatibilityIn.includes(
+      analysis.valuation.compatibility,
+    );
+    assertions.push(
+      assertion(
+        "Benchmark compatibility in expected set",
+        def.expect.benchmarkCompatibilityIn.join(" / "),
+        analysis.valuation.compatibility,
+        okBench,
+      ),
+    );
+  }
+
+  if (def.expect.riskConfidenceIn && def.expect.riskConfidenceIn.length > 0) {
+    const okRisk = def.expect.riskConfidenceIn.includes(analysis.risk.riskConfidence);
+    assertions.push(
+      assertion(
+        "Risk confidence in expected set",
+        def.expect.riskConfidenceIn.join(" / "),
+        analysis.risk.riskConfidence,
+        okRisk,
       ),
     );
   }

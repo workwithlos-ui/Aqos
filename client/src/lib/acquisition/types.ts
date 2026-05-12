@@ -154,16 +154,30 @@ export interface BenchmarkMultiple {
   confidence: "low" | "medium" | "high";
 }
 
+export interface BenchmarkPair {
+  ebitda: BenchmarkMultiple | null;
+  sde: BenchmarkMultiple | null;
+}
+
+export type ValuationCompatibility =
+  | "basis_match" // Benchmark basis matches earnings basis — direct comparison.
+  | "reference_only" // Benchmark exists but in opposite basis. Show with explicit caveat.
+  | "unavailable"; // No benchmark for this industry, or earnings missing.
+
 export interface ValuationResult {
   status: MetricStatus;
   earningsBasis: EarningsBasis;
   earningsUsed: number | null;
   benchmark: BenchmarkMultiple | null;
+  /** The multiple actually used to compare against the band (matches benchmark.basis). */
+  comparisonMultiple: MetricResult;
+  /** Same as before — the implied multiple in the deal's earnings basis. */
   currentImpliedMultiple: MetricResult;
   benchmarkLowValue: number | null;
   benchmarkMedianValue: number | null;
   benchmarkHighValue: number | null;
   benchmarkBandLabel: string;
+  compatibility: ValuationCompatibility;
   bandPosition:
     | "below_low"
     | "in_band"
@@ -195,6 +209,16 @@ export interface RiskResult {
   criticalCount: number;
   averageScore: number | null;
   hasCritical: boolean;
+  /** Number of risk factors with no actual or derived score. */
+  missingCount: number;
+  /** factors.length total. */
+  totalFactors: number;
+  /** Fraction of factors with a known score (0..1). */
+  completeness: number;
+  /** Confidence in the risk panel as a whole. */
+  riskConfidence: "high" | "medium" | "low" | "insufficient";
+  /** Plain-language summary used by UI/exports/advisor. */
+  riskCompletenessLabel: string;
 }
 
 export interface DealScoreContribution {
@@ -250,6 +274,12 @@ export interface DealVerdictResult {
   rationale: string;
   blockers: string[];
   confidence: "low" | "medium" | "high";
+  /** When true, the headline numbers work but diligence/risk completeness is too
+   * low to call this a final recommendation. UI must label the score as
+   * "Preliminary". */
+  isPreliminary: boolean;
+  /** Sentence explaining why confidence is what it is — quoted by exports/advisor. */
+  confidenceReason: string;
 }
 
 export interface DealAnalysis {
@@ -277,6 +307,9 @@ export interface DealAnalysis {
   score: DealScoreResult;
   missingData: MissingDataResult;
   verdict: DealVerdictResult;
+
+  /** Final, post-confidence headline label for the score, e.g. "Score" or "Preliminary Score". */
+  scoreLabel: string;
 
   nextActions: string[];
   assumptions: CapitalStackAssumptions;

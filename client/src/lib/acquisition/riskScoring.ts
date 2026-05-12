@@ -200,11 +200,35 @@ export function scoreRisk(input: DealInput): RiskResult {
       ? null
       : scored.reduce((a, b) => ((b.score ?? 0) > (a.score ?? 0) ? b : a));
 
+  const totalFactors = factors.length;
+  const missingCount = totalFactors - scored.length;
+  const completeness = totalFactors === 0 ? 0 : scored.length / totalFactors;
+
+  // Risk confidence is a function of how many of the five factors we actually
+  // know. With four or five known, the panel is high confidence. Three known
+  // is medium. Two is low. Fewer than two is insufficient and the engine must
+  // tell the buyer instead of pretending the panel is informative.
+  let riskConfidence: "high" | "medium" | "low" | "insufficient";
+  if (scored.length >= 4) riskConfidence = "high";
+  else if (scored.length === 3) riskConfidence = "medium";
+  else if (scored.length === 2) riskConfidence = "low";
+  else riskConfidence = "insufficient";
+
+  const riskCompletenessLabel =
+    missingCount === 0
+      ? "All five risk factors scored."
+      : `${missingCount} of ${totalFactors} risk factors are missing — risk score is incomplete.`;
+
   return {
     factors,
     highestRisk: highest,
     criticalCount,
     averageScore: avg,
     hasCritical: criticalCount > 0,
+    missingCount,
+    totalFactors,
+    completeness,
+    riskConfidence,
+    riskCompletenessLabel,
   };
 }
