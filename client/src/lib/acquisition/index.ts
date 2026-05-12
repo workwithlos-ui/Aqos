@@ -21,7 +21,12 @@ import { scoreRisk } from "./riskScoring";
 import { detectMissingData } from "./missingData";
 import { scoreDeal } from "./dealScoring";
 import { computeVerdict, nextActionsFor } from "./dealVerdict";
+import { scoreThesisFit, DEFAULT_BUY_BOX } from "./thesis";
+import { scoreWorkingCapital } from "./workingCapital";
+import { scoreIntegration } from "./integration";
+import { computeGovernance, computeDealFreeze, computeRedTeam } from "./governance";
 import type {
+  BuyBox,
   CapitalStackAssumptions,
   DealAnalysis,
   DealInput,
@@ -180,6 +185,7 @@ function dscrPairFor(
 export function analyzeDeal(
   input: DealInput,
   assumptions: CapitalStackAssumptions = DEFAULT_ASSUMPTIONS,
+  buyBox: BuyBox | null = null,
 ): DealAnalysis {
   const earnings = selectEarnings(input);
   const price = selectPurchasePrice(input);
@@ -235,6 +241,29 @@ export function analyzeDeal(
       confidenceReason: "Engine has not yet finalized the analysis.",
     },
     scoreLabel: "Score",
+    thesis: scoreThesisFit(input, buyBox ?? DEFAULT_BUY_BOX),
+    workingCapital: scoreWorkingCapital(input),
+    integration: scoreIntegration(input),
+    governance: {
+      gates: [],
+      passedCount: 0,
+      totalCount: 0,
+      icReady: false,
+      loiReady: false,
+      lenderReady: false,
+      closeReady: false,
+      blockers: [],
+      nextGovernanceAction: "",
+    },
+    freeze: {
+      status: "green",
+      triggers: [],
+      blocksAcquisitionPriority: false,
+      blocksCloseReady: false,
+      blocksAggressiveLOI: false,
+      rationale: "",
+    },
+    redTeam: { objections: [], topObjections: [], unresolvedCriticalCount: 0, rationale: "" },
     nextActions: [],
     assumptions,
   };
@@ -245,6 +274,31 @@ export function analyzeDeal(
   const verdict = computeVerdict(partial);
   partial.verdict = verdict;
   partial.scoreLabel = verdict.isPreliminary ? "Preliminary Score" : "Score";
+
+  // Compute institutional M&A modules
+  partial.freeze = computeDealFreeze(partial);
+  partial.redTeam = computeRedTeam(partial);
+  partial.governance = computeGovernance(partial);
+
+  // Off-thesis blocks Acquisition Priority unless exception approved
+  if (partial.thesis.bucket === "Off-Thesis" && !partial.thesis.exceptionApproved) {
+    if (partial.score.bucket === "Acquisition Priority") {
+      partial.score.bucket = "Diligence Priority";
+    }
+  }
+
+  // Red freeze blocks Acquisition Priority and Close Ready
+  if (partial.freeze.status === "red") {
+    if (partial.score.bucket === "Acquisition Priority") {
+      partial.score.bucket = "Diligence Priority";
+    }
+    partial.governance.closeReady = false;
+  }
+
+  // Working capital missing blocks Close Ready
+  if (partial.workingCapital.status === "missing") {
+    partial.governance.closeReady = false;
+  }
 
   partial.nextActions = nextActionsFor(partial);
   return partial;
@@ -257,3 +311,4 @@ export * from "./benchmarkMultiples";
 export { DEFAULT_ASSUMPTIONS, buildCapitalStack } from "./dealMath";
 export { scoreRisk } from "./riskScoring";
 export { detectMissingData } from "./missingData";
+export { DEFAULT_BUY_BOX } from "./thesis";

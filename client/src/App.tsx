@@ -11,6 +11,11 @@ import Advisor from "./pages/Advisor";
 import Exports from "./pages/Exports";
 import Assumptions from "./pages/Assumptions";
 import TestSuite from "./pages/TestSuite";
+import BuyBox from "./pages/BuyBox";
+import WorkingCapital from "./pages/WorkingCapital";
+import Integration from "./pages/Integration";
+import Governance from "./pages/Governance";
+import RedTeam from "./pages/RedTeam";
 import NotFound from "./pages/NotFound";
 
 function Router() {
@@ -26,6 +31,11 @@ function Router() {
         <Route path="/exports/:id" component={Exports} />
         <Route path="/assumptions" component={Assumptions} />
         <Route path="/tests" component={TestSuite} />
+        <Route path="/m-and-a/thesis" component={BuyBox} />
+        <Route path="/m-and-a/working-capital" component={WorkingCapital} />
+        <Route path="/m-and-a/integration" component={Integration} />
+        <Route path="/m-and-a/governance" component={Governance} />
+        <Route path="/m-and-a/red-team" component={RedTeam} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

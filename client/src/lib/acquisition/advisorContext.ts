@@ -82,6 +82,43 @@ export interface AdvisorDealContext {
   verdictConfidenceReason: string;
 
   nextActions: string[];
+
+  // Institutional M&A
+  thesisFitScore: number;
+  thesisBucket: string;
+  thesisRationale: string;
+  thesisRedFlags: string[];
+  thesisMustHaveBlocked: string[];
+  exceptionApproved: boolean;
+
+  workingCapitalStatus: string;
+  workingCapitalRisk: string;
+  workingCapitalWarnings: string[];
+  wcBlocksCloseReady: boolean;
+
+  integrationReadinessScore: number;
+  integrationStatus: string;
+  integrationBlockers: string[];
+  integrationRequiredActions: string[];
+  hundredDayReady: boolean;
+  canCloseSafely: boolean;
+
+  governancePassedCount: number;
+  governanceTotalCount: number;
+  governanceBlockers: string[];
+  icReady: boolean;
+  loiReady: boolean;
+  lenderReady: boolean;
+  closeReady: boolean;
+  nextGovernanceAction: string;
+
+  freezeStatus: string;
+  freezeRationale: string;
+  freezeTriggers: string[];
+  blocksAcquisitionPriority: boolean;
+
+  redTeamTopObjections: string[];
+  unresolvedCriticalObjections: number;
 }
 
 export interface AdvisorPortfolioContext {
@@ -203,6 +240,43 @@ export function buildAdvisorDealContext(a: DealAnalysis): AdvisorDealContext {
     verdictConfidence: a.verdict.confidence,
     verdictConfidenceReason: a.verdict.confidenceReason,
     nextActions: a.nextActions,
+
+    // Institutional M&A
+    thesisFitScore: a.thesis.fitScore,
+    thesisBucket: a.thesis.bucket,
+    thesisRationale: a.thesis.rationale,
+    thesisRedFlags: a.thesis.redFlagsTriggered,
+    thesisMustHaveBlocked: a.thesis.mustHaveBlocked,
+    exceptionApproved: a.thesis.exceptionApproved,
+
+    workingCapitalStatus: a.workingCapital.status,
+    workingCapitalRisk: a.workingCapital.workingCapitalRisk,
+    workingCapitalWarnings: a.workingCapital.buyerWarnings,
+    wcBlocksCloseReady: a.workingCapital.blocksCloseReady,
+
+    integrationReadinessScore: a.integration.readinessScore,
+    integrationStatus: a.integration.status,
+    integrationBlockers: a.integration.blockers,
+    integrationRequiredActions: a.integration.requiredActions,
+    hundredDayReady: a.integration.hundredDayReady,
+    canCloseSafely: a.integration.canCloseSafely,
+
+    governancePassedCount: a.governance.passedCount,
+    governanceTotalCount: a.governance.totalCount,
+    governanceBlockers: a.governance.blockers,
+    icReady: a.governance.icReady,
+    loiReady: a.governance.loiReady,
+    lenderReady: a.governance.lenderReady,
+    closeReady: a.governance.closeReady,
+    nextGovernanceAction: a.governance.nextGovernanceAction,
+
+    freezeStatus: a.freeze.status,
+    freezeRationale: a.freeze.rationale,
+    freezeTriggers: a.freeze.triggers.map((t) => `${t.label}: ${t.detail}`),
+    blocksAcquisitionPriority: a.freeze.blocksAcquisitionPriority,
+
+    redTeamTopObjections: a.redTeam.topObjections.map((o) => `${o.prompt} → ${o.finding}`),
+    unresolvedCriticalObjections: a.redTeam.unresolvedCriticalCount,
   };
 }
 

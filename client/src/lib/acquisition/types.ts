@@ -47,6 +47,65 @@ export interface DiligenceChecklist {
   qoeComplete?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// WORKING CAPITAL INPUTS
+// ---------------------------------------------------------------------------
+
+export interface WorkingCapitalInputs {
+  arBalance?: number | null;
+  apBalance?: number | null;
+  inventoryBalance?: number | null;
+  cashIncluded?: number | null;
+  monthlyRevenue?: number | null;
+  monthlyFixedCosts?: number | null;
+  dso?: number | null;
+  dpo?: number | null;
+  dio?: number | null;
+  arOver90Pct?: number | null;
+  inventoryOver90Pct?: number | null;
+  workingCapitalPeg?: number | null;
+  requiredLiquidityBufferMonths?: number | null;
+  seasonalityFactor?: number | null;
+  capExNeedsAnnual?: number | null;
+  totalDebtBalance?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// INTEGRATION INPUTS
+// ---------------------------------------------------------------------------
+
+export type IntegrationComplexity = "low" | "medium" | "high" | "critical";
+
+export interface IntegrationInputs {
+  complexity?: IntegrationComplexity;
+  integrationLeadAssigned?: boolean;
+  integrationLeadCapacityHrsPerWeek?: number | null;
+  keyEmployeesIdentified?: boolean;
+  keyEmployeeRetentionPlan?: boolean;
+  customerCommunicationPlan?: boolean;
+  systemsMigrationPlan?: boolean;
+  accountingTransitionPlan?: boolean;
+  payrollTransitionPlan?: boolean;
+  vendorTransitionPlan?: boolean;
+  hundredDayPlanDrafted?: boolean;
+  sopTransferStatus?: "not_started" | "in_progress" | "complete" | "missing";
+  sellerTransitionWeeks?: number | null;
+  cultureRisk?: "low" | "medium" | "high" | "missing";
+}
+
+// ---------------------------------------------------------------------------
+// PER-DEAL FREEZE / EXCEPTION FLAGS
+// ---------------------------------------------------------------------------
+
+export interface DealOverrides {
+  /** Buyer marks the deal as off-thesis but explicitly approved for review. */
+  exceptionApproved?: boolean;
+  exceptionRationale?: string | null;
+  /** Buyer manually freezes a deal. */
+  manualFreeze?: "green" | "yellow" | "red" | null;
+  manualFreezeReason?: string | null;
+}
+
 export interface DealInput {
   id?: string;
   companyName: string;
@@ -77,6 +136,14 @@ export interface DealInput {
   notes?: string | null;
   createdAt?: string;
   updatedAt?: string;
+
+  // Institutional M&A inputs.
+  workingCapital?: WorkingCapitalInputs;
+  integration?: IntegrationInputs;
+  overrides?: DealOverrides;
+
+  // Per-deal recurring revenue / geography signal for thesis fit.
+  geography?: string | null;
 }
 
 export interface MetricResult {
@@ -282,6 +349,219 @@ export interface DealVerdictResult {
   confidenceReason: string;
 }
 
+// ---------------------------------------------------------------------------
+// THESIS / BUY BOX
+// ---------------------------------------------------------------------------
+
+export interface BuyBox {
+  targetIndustries: string[];
+  excludedIndustries: string[];
+  revenueMin: number | null;
+  revenueMax: number | null;
+  earningsMin: number | null;
+  earningsMax: number | null;
+  minMarginPct: number | null;
+  maxCustomerConcentrationPct: number | null;
+  geographies: string[];
+  ownerDependencyTolerance: "low" | "medium" | "high";
+  recurringRevenuePreferredPct: number | null;
+  employeeCountMin: number | null;
+  employeeCountMax: number | null;
+  yearsInBusinessMin: number | null;
+  requiresFinancing: boolean;
+  requiresSellerFinancing: boolean;
+  requiresSbaEligibility: boolean;
+  strategicRationale: string;
+  redFlags: string[];
+  mustHave: string[];
+  niceToHave: string[];
+}
+
+export type ThesisFitBucket =
+  | "Strong Fit"
+  | "Partial Fit"
+  | "Off-Thesis"
+  | "Exception Required";
+
+export interface ThesisCriterion {
+  key: string;
+  label: string;
+  weight: "must" | "important" | "preferred";
+  status: "pass" | "fail" | "unknown";
+  detail: string;
+}
+
+export interface ThesisFitResult {
+  enabled: boolean;
+  fitScore: number; // 0..100
+  bucket: ThesisFitBucket;
+  passed: ThesisCriterion[];
+  failed: ThesisCriterion[];
+  unknown: ThesisCriterion[];
+  redFlagsTriggered: string[];
+  mustHaveBlocked: string[];
+  exceptionApproved: boolean;
+  exceptionRationale: string | null;
+  rationale: string;
+}
+
+// ---------------------------------------------------------------------------
+// WORKING CAPITAL RESULT
+// ---------------------------------------------------------------------------
+
+export interface WorkingCapitalResult {
+  status: "complete" | "partial" | "missing";
+  netWorkingCapital: number | null;
+  estimatedPeg: number | null;
+  liquidityBufferRequired: number | null;
+  cashConversionDays: number | null;
+  cashConversionRisk: "low" | "medium" | "high" | "missing";
+  workingCapitalRisk: "low" | "medium" | "high" | "critical" | "missing";
+  closingAdjustment: number | null;
+  buyerWarnings: string[];
+  blocksCloseReady: boolean;
+  arOverdueRisk: "low" | "medium" | "high" | "missing";
+  inventoryStaleRisk: "low" | "medium" | "high" | "missing";
+  capExBurdenAnnual: number | null;
+  notes: string[];
+}
+
+// ---------------------------------------------------------------------------
+// INTEGRATION RESULT
+// ---------------------------------------------------------------------------
+
+export interface IntegrationGate {
+  key: string;
+  label: string;
+  status: "pass" | "fail" | "missing";
+  detail: string;
+}
+
+export interface IntegrationResult {
+  status: "ready" | "in_progress" | "not_ready" | "missing";
+  readinessScore: number; // 0..100
+  gates: IntegrationGate[];
+  blockers: string[];
+  requiredActions: string[];
+  hundredDayReady: boolean;
+  canCloseSafely: boolean;
+  integrationRisk: "low" | "medium" | "high" | "critical" | "missing";
+  rationale: string;
+}
+
+// ---------------------------------------------------------------------------
+// GOVERNANCE / IC GATES
+// ---------------------------------------------------------------------------
+
+export type GovernanceGateKey =
+  | "thesisFitComplete"
+  | "initialScreenComplete"
+  | "underwritingComplete"
+  | "dscrPasses"
+  | "capitalStackReconciles"
+  | "benchmarkBasisValid"
+  | "criticalDiligenceIdentified"
+  | "qoePlanDefined"
+  | "workingCapitalReviewed"
+  | "integrationPlanDrafted"
+  | "redTeamObjectionsComplete"
+  | "freezeTriggersClear"
+  | "lenderPackageReady"
+  | "loiTermsDrafted"
+  | "legalReviewRequired";
+
+export interface GovernanceGate {
+  key: GovernanceGateKey;
+  label: string;
+  status: "pass" | "fail" | "pending";
+  detail: string;
+}
+
+export interface GovernanceResult {
+  gates: GovernanceGate[];
+  passedCount: number;
+  totalCount: number;
+  icReady: boolean;
+  loiReady: boolean;
+  lenderReady: boolean;
+  closeReady: boolean;
+  blockers: string[];
+  nextGovernanceAction: string;
+}
+
+// ---------------------------------------------------------------------------
+// FREEZE COMMAND CENTER
+// ---------------------------------------------------------------------------
+
+export type FreezeStatus = "green" | "yellow" | "red";
+
+export interface FreezeTrigger {
+  key: string;
+  scope: "deal" | "platform";
+  severity: FreezeStatus;
+  label: string;
+  detail: string;
+  active: boolean;
+}
+
+export interface DealFreezeResult {
+  status: FreezeStatus;
+  triggers: FreezeTrigger[];
+  blocksAcquisitionPriority: boolean;
+  blocksCloseReady: boolean;
+  blocksAggressiveLOI: boolean;
+  rationale: string;
+}
+
+export interface PlatformContext {
+  liquidityBuffer?: number | null;
+  liquidityBufferRequired?: number | null;
+  portfolioDscrAfter?: number | null;
+  portfolioRevenueDeclinePct?: number | null;
+  portfolioEbitdaMarginDeltaPct?: number | null;
+  integrationMilestonesMissed?: number | null;
+  customerChurnSpikePct?: number | null;
+  keyEmployeeDepartures?: number | null;
+  openPostCloseIssues?: number | null;
+  dealsInDiligence?: number | null;
+  diligenceCapacity?: number | null;
+}
+
+export interface PlatformFreezeResult {
+  status: FreezeStatus;
+  triggers: FreezeTrigger[];
+  rationale: string;
+}
+
+// ---------------------------------------------------------------------------
+// RED TEAM
+// ---------------------------------------------------------------------------
+
+export type ObjectionSeverity = "low" | "medium" | "high" | "critical";
+export type ObjectionStatus = "open" | "in_diligence" | "cleared" | "unresolvable";
+
+export interface RedTeamObjection {
+  key: string;
+  prompt: string;
+  finding: string;
+  evidenceNeeded: string[];
+  severity: ObjectionSeverity;
+  owner: string;
+  status: ObjectionStatus;
+  cleared: boolean;
+}
+
+export interface RedTeamResult {
+  objections: RedTeamObjection[];
+  topObjections: RedTeamObjection[]; // first 5 by severity
+  unresolvedCriticalCount: number;
+  rationale: string;
+}
+
+// ---------------------------------------------------------------------------
+// EXISTING DealAnalysis
+// ---------------------------------------------------------------------------
+
 export interface DealAnalysis {
   dealId?: string;
   companyName: string;
@@ -310,6 +590,14 @@ export interface DealAnalysis {
 
   /** Final, post-confidence headline label for the score, e.g. "Score" or "Preliminary Score". */
   scoreLabel: string;
+
+  // Institutional M&A modules.
+  thesis: ThesisFitResult;
+  workingCapital: WorkingCapitalResult;
+  integration: IntegrationResult;
+  governance: GovernanceResult;
+  freeze: DealFreezeResult;
+  redTeam: RedTeamResult;
 
   nextActions: string[];
   assumptions: CapitalStackAssumptions;

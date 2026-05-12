@@ -174,7 +174,88 @@ export type ExportKind =
   | "broker-email"
   | "diligence-list"
   | "loi-strategy"
-  | "kill-memo";
+  | "kill-memo"
+  | "thesis-fit"
+  | "working-capital"
+  | "integration"
+  | "red-team"
+  | "one-pager"
+  | "expanded-ic";
+
+function generateThesisFit(a: DealAnalysis): ExportPayload {
+  const lines: string[] = [];
+  lines.push(header(a, "Buy Box Thesis Fit"));
+  lines.push(`## Fit Score: ${a.thesis.fitScore}/100 | Bucket: ${a.thesis.bucket}`);
+  lines.push(`## Rationale\n${a.thesis.rationale}`);
+  if (a.thesis.redFlagsTriggered.length) {
+    lines.push(`## Red Flags\n${a.thesis.redFlagsTriggered.map((f) => `- ${f}`).join("\n")}`);
+  }
+  if (a.thesis.mustHaveBlocked.length) {
+    lines.push(`## Must-Have Criteria Blocked\n${a.thesis.mustHaveBlocked.map((b) => `- ${b}`).join("\n")}`);
+  }
+  return {
+    filename: `${slug(a.companyName)}-thesis-fit.md`,
+    title: "Buy Box Thesis Fit",
+    content: lines.join("\n\n"),
+  };
+}
+
+function generateWorkingCapital(a: DealAnalysis): ExportPayload {
+  const lines: string[] = [];
+  lines.push(header(a, "Working Capital Risk"));
+  lines.push(`## Status: ${a.workingCapital.status} | Risk: ${a.workingCapital.workingCapitalRisk}`);
+  lines.push(`- Net WC: ${money(a.workingCapital.netWorkingCapital)}\n- Estimated Peg: ${money(a.workingCapital.estimatedPeg)}\n- CCC: ${a.workingCapital.cashConversionDays ?? "missing"} days\n- Liquidity Buffer: ${money(a.workingCapital.liquidityBufferRequired)}`);
+  if (a.workingCapital.buyerWarnings.length) {
+    lines.push(`## Warnings\n${a.workingCapital.buyerWarnings.map((w) => `- ${w}`).join("\n")}`);
+  }
+  return {
+    filename: `${slug(a.companyName)}-working-capital.md`,
+    title: "Working Capital Risk",
+    content: lines.join("\n\n"),
+  };
+}
+
+function generateIntegration(a: DealAnalysis): ExportPayload {
+  const lines: string[] = [];
+  lines.push(header(a, "Integration Readiness"));
+  lines.push(`## Score: ${a.integration.readinessScore.toFixed(0)}/100 | Status: ${a.integration.status}`);
+  if (a.integration.blockers.length) {
+    lines.push(`## Blockers\n${a.integration.blockers.map((b) => `- ${b}`).join("\n")}`);
+  }
+  if (a.integration.requiredActions.length) {
+    lines.push(`## Required Actions\n${a.integration.requiredActions.map((a) => `- ${a}`).join("\n")}`);
+  }
+  return {
+    filename: `${slug(a.companyName)}-integration.md`,
+    title: "Integration Readiness",
+    content: lines.join("\n\n"),
+  };
+}
+
+function generateRedTeam(a: DealAnalysis): ExportPayload {
+  const lines: string[] = [];
+  lines.push(header(a, "Red Team Objections"));
+  lines.push(`## Unresolved Critical: ${a.redTeam.unresolvedCriticalCount}`);
+  lines.push(`## Top Objections\n${a.redTeam.topObjections.map((o) => `- **${o.prompt}** → ${o.finding}`).join("\n")}`);
+  return {
+    filename: `${slug(a.companyName)}-red-team.md`,
+    title: "Red Team Objections",
+    content: lines.join("\n\n"),
+  };
+}
+
+function generateOnePager(a: DealAnalysis): ExportPayload {
+  const lines: string[] = [];
+  lines.push(`# ${a.companyName} — Deal One-Pager\n`);
+  lines.push(`**Verdict:** ${a.verdict.verdict} ${a.verdict.isPreliminary ? "(PRELIMINARY)" : ""}`);
+  lines.push(`**Score:** ${a.scoreLabel} ${Math.round(a.score.score)}/100 | **Confidence:** ${a.verdict.confidence}\n`);
+  lines.push(`| Metric | Value |\n|--------|-------|\n| Revenue | ${money(a.ebitdaMargin.inputs.Revenue as number ?? a.sdeMargin.inputs.Revenue as number)} |\n| Earnings (${a.earningsBasis}) | ${money(a.earningsUsed)} |\n| EV/${a.earningsBasis} | ${mult(a.earningsBasis === "EBITDA" ? a.evToEBITDA.value : a.evToSDE.value)} |\n| DSCR (post-standby) | ${a.dscrPair.afterStandby.display} |\n| Thesis Fit | ${a.thesis.fitScore}/100 (${a.thesis.bucket}) |\n| Governance | ${a.governance.passedCount}/${a.governance.totalCount} gates |\n| Freeze Status | ${a.freeze.status.toUpperCase()} |`);
+  return {
+    filename: `${slug(a.companyName)}-one-pager.md`,
+    title: "Deal One-Pager",
+    content: lines.join("\n\n"),
+  };
+}
 
 export function generateExport(kind: ExportKind, a: DealAnalysis): ExportPayload {
   switch (kind) {
@@ -190,5 +271,17 @@ export function generateExport(kind: ExportKind, a: DealAnalysis): ExportPayload
       return generateLOIStrategy(a);
     case "kill-memo":
       return generateKillMemo(a);
+    case "thesis-fit":
+      return generateThesisFit(a);
+    case "working-capital":
+      return generateWorkingCapital(a);
+    case "integration":
+      return generateIntegration(a);
+    case "red-team":
+      return generateRedTeam(a);
+    case "one-pager":
+      return generateOnePager(a);
+    case "expanded-ic":
+      return generateICMemo(a);
   }
 }

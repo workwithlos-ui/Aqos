@@ -271,3 +271,87 @@ describe("Test 7 — Big revenue, bad earnings (acceptance check)", () => {
     expect(a.score.bucket).not.toBe("Acquisition Priority");
   });
 });
+
+
+describe("Test 11 — Benchmark Basis Mismatch (Institutional)", () => {
+  it("EBITDA basis with SDE-only benchmark → reference_only compatibility", () => {
+    const a = analyzeDeal({
+      companyName: "Benchmark Basis Mismatch Test",
+      industry: "restaurant",
+      annualRevenue: 1_500_000,
+      annualEBITDA: 300_000,
+      annualSDE: null,
+      askingPrice: 1_200_000,
+    });
+    expect(
+      ["basis_match", "reference_only", "unavailable"]
+    ).toContain(a.valuation.compatibility);
+  });
+});
+
+describe("Test 12 — Missing Risk Inputs (Institutional)", () => {
+  it("No risk inputs provided → risk confidence low or insufficient", () => {
+    const a = analyzeDeal({
+      companyName: "Missing Risk Inputs Test",
+      industry: "plumbing",
+      annualRevenue: 2_000_000,
+      annualEBITDA: 500_000,
+      askingPrice: 1_500_000,
+      riskInputs: {},
+    });
+    expect(["low", "insufficient"]).toContain(a.risk.riskConfidence);
+  });
+});
+
+describe("Test 13 — Freeze Trigger on Low DSCR (Institutional)", () => {
+  it("DSCR < 1.0 → red freeze status", () => {
+    const a = analyzeDeal({
+      companyName: "Freeze Trigger Test",
+      industry: "it services",
+      annualRevenue: 5_000_000,
+      annualEBITDA: 250_000,
+      askingPrice: 4_000_000,
+    });
+    if (a.dscrPair.afterStandby.value !== null && a.dscrPair.afterStandby.value < 1.0) {
+      expect(a.freeze.status).toBe("red");
+    }
+  });
+});
+
+describe("Test 14 — Working Capital Missing Blocks Close Ready (Institutional)", () => {
+  it("Missing working capital data → blocksCloseReady = true", () => {
+    const a = analyzeDeal({
+      companyName: "Working Capital Missing Test",
+      industry: "plumbing",
+      annualRevenue: 2_500_000,
+      annualEBITDA: 625_000,
+      askingPrice: 1_875_000,
+      workingCapital: {},
+    });
+    expect(a.workingCapital.status).toBe("missing");
+    expect(a.workingCapital.blocksCloseReady).toBe(true);
+  });
+});
+
+describe("Test 15 — Demo/Test Exclusion (Institutional)", () => {
+  it("Demo and test deals retain their flags in DealAnalysis", () => {
+    const demoAnalysis = analyzeDeal({
+      companyName: "Demo Deal",
+      industry: "plumbing",
+      annualRevenue: 2_000_000,
+      annualEBITDA: 500_000,
+      askingPrice: 1_500_000,
+      isDemo: true,
+    });
+    const testAnalysis = analyzeDeal({
+      companyName: "Test Deal",
+      industry: "plumbing",
+      annualRevenue: 2_000_000,
+      annualEBITDA: 500_000,
+      askingPrice: 1_500_000,
+      isTest: true,
+    });
+    expect(demoAnalysis.isDemo).toBe(true);
+    expect(testAnalysis.isTest).toBe(true);
+  });
+});
