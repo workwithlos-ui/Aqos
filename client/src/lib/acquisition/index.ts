@@ -107,15 +107,21 @@ function valuationFor(
   const compMultiplePresent =
     comparisonMultiple.value !== null && Number.isFinite(comparisonMultiple.value);
   if (compatibility === "basis_match" && !compMultiplePresent) {
+    const ind = input.industry ? `${input.industry} ` : "";
     warnings.push(
-      `${benchmark!.basis} benchmark exists but EV/${benchmark!.basis} could not be calculated (${benchmark!.basis} earnings missing).`,
+      `${ind}benchmark is ${benchmark!.basis}-based. Add ${benchmark!.basis} to calculate a valid EV/${benchmark!.basis} comparison. Benchmark value range suppressed until ${benchmark!.basis} is provided.`,
     );
     compatibility = "reference_only";
   }
 
-  const lowVal = benchmark ? benchmark.low * earningsUsed : null;
-  const medianVal = benchmark ? benchmark.median * earningsUsed : null;
-  const highVal = benchmark ? benchmark.high * earningsUsed : null;
+  // Hard suppression: benchmark median/low/high values are only published when
+  // the benchmark basis matches the earnings basis. For reference_only or
+  // unavailable, return nulls so the UI/exports/advisor cannot render an
+  // invalid "implied value" or "gap vs asking".
+  const isPublishableBand = compatibility === "basis_match";
+  const lowVal = isPublishableBand && benchmark ? benchmark.low * earningsUsed : null;
+  const medianVal = isPublishableBand && benchmark ? benchmark.median * earningsUsed : null;
+  const highVal = isPublishableBand && benchmark ? benchmark.high * earningsUsed : null;
 
   let bandPosition: ValuationResult["bandPosition"] = "missing";
   if (compatibility === "basis_match" && benchmark && comparisonMultiple.value !== null) {
@@ -137,9 +143,10 @@ function valuationFor(
         ? input.askingPrice
         : null;
 
-  // Value gap is only meaningful when the benchmark is directly comparable.
+  // Value gap is only meaningful when the benchmark is directly comparable AND
+  // the median value was actually published (otherwise we'd be subtracting from null).
   const valueGapVsAsking =
-    compatibility === "basis_match" && medianVal !== null && askingOrPP !== null
+    isPublishableBand && medianVal !== null && askingOrPP !== null
       ? medianVal - askingOrPP
       : null;
 

@@ -34,12 +34,14 @@ export default function Dashboard() {
   const scoringReview = bucket("Scoring Review");
   const cannotUW = bucket("Cannot Underwrite");
 
-  const totalEarnings = liveAnalyses.reduce(
-    (s, a) => s + (a.earningsUsed ?? 0),
-    0,
-  );
-  const totalAsking = liveAnalyses.reduce(
-    (s, a) => s + (a.capitalStack.purchasePriceUsed ?? 0),
+  // Aggregate totals only sum deals that actually have a value for the
+  // metric. We never coerce missing → 0 because that would make the headline
+  // numbers misleading. We surface a "k of N" denominator so the user knows.
+  const earningsHave = liveAnalyses.filter((a) => a.earningsUsed !== null);
+  const totalEarnings = earningsHave.reduce((s, a) => s + (a.earningsUsed as number), 0);
+  const askingHave = liveAnalyses.filter((a) => a.capitalStack.purchasePriceUsed !== null);
+  const totalAsking = askingHave.reduce(
+    (s, a) => s + (a.capitalStack.purchasePriceUsed as number),
     0,
   );
   const topActions = liveAnalyses
@@ -103,8 +105,8 @@ export default function Dashboard() {
         />
         <StatCard
           title="Pipeline earnings"
-          value={fmtCurrencyExact(totalEarnings)}
-          sub={`Total asking: ${fmtCurrencyExact(totalAsking)}`}
+          value={earningsHave.length === 0 ? "missing" : fmtCurrencyExact(totalEarnings)}
+          sub={`${earningsHave.length}/${liveAnalyses.length} report earnings · Asking: ${askingHave.length === 0 ? "missing" : fmtCurrencyExact(totalAsking)}`}
         />
       </section>
 
@@ -134,7 +136,7 @@ export default function Dashboard() {
                       <div className="font-semibold truncate">{a.companyName}</div>
                       <div className="text-xs text-muted-foreground truncate">
                         {a.valuation.benchmark?.industryLabel ?? "Industry missing"} ·
-                        {" "}{a.earningsBasis} {fmtCurrencyExact(a.earningsUsed)} ·
+                        {" "}{a.earningsBasis} {a.earningsUsed !== null ? fmtCurrencyExact(a.earningsUsed) : "missing"} ·
                         Score {Math.round(a.score.score)}/100
                       </div>
                     </div>

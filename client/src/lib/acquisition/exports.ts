@@ -51,6 +51,25 @@ export function generateICMemo(a: DealAnalysis): ExportPayload {
   if (a.missingData.importantMissing.length)
     lines.push(`## Important Missing Data\n${a.missingData.importantMissing.map((c) => `- ${c}`).join("\n")}`);
   lines.push(`## Next Actions\n${a.nextActions.map((n) => `1. ${n}`).join("\n")}`);
+
+  // Hard-refactor requirement: every IC memo MUST end with the assumptions
+  // used, the missing-data list, the confidence level, and a "do not rely
+  // until verified" disclaimer when data is incomplete.
+  lines.push(`## Assumptions Used\n- SBA Loan: ${(a.assumptions.sbaLoanPct * 100).toFixed(0)}% @ ${(a.assumptions.sbaInterestRate * 100).toFixed(2)}% over ${a.assumptions.sbaTermYears}yr\n- Seller Note: ${(a.assumptions.sellerNotePct * 100).toFixed(0)}% @ ${(a.assumptions.sellerNoteRate * 100).toFixed(2)}% over ${a.assumptions.sellerNoteTermYears}yr (standby ${a.assumptions.sellerNoteStandbyMonths}mo)\n- Buyer Equity: ${(a.assumptions.buyerEquityPct * 100).toFixed(0)}%\n- Benchmark source: ${a.valuation.benchmark?.industryLabel ? `industry table for ${a.valuation.benchmark.industryLabel}` : "none (industry missing)"}\n- Earnings basis selection: EBITDA preferred, SDE fallback (current basis: ${a.earningsBasis})`);
+  const allMissing = [
+    ...a.missingData.criticalMissing.map((m) => `[Critical] ${m}`),
+    ...a.missingData.importantMissing.map((m) => `[Important] ${m}`),
+    ...a.missingData.niceToHaveMissing.map((m) => `[Nice-to-have] ${m}`),
+  ];
+  if (allMissing.length === 0) {
+    lines.push(`## Missing Data\nNone flagged by the engine.`);
+  } else {
+    lines.push(`## Missing Data (${allMissing.length})\n${allMissing.map((m) => `- ${m}`).join("\n")}`);
+  }
+  lines.push(`## Confidence\n- Verdict confidence: **${a.verdict.confidence}**\n- Reason: ${a.verdict.confidenceReason}\n- Risk completeness: ${a.risk.riskCompletenessLabel} (risk confidence ${a.risk.riskConfidence})`);
+  if (a.verdict.isPreliminary || a.missingData.criticalMissing.length > 0 || a.risk.riskConfidence === "low") {
+    lines.push(`> **Do Not Rely Until Verified.** This memo is preliminary. Critical inputs are missing or risk completeness is low. Resolve the items in \"Missing Data\" before submitting to lender or IC.`);
+  }
   return {
     filename: `${slug(a.companyName)}-ic-memo.md`,
     title: "Investment Committee Memo",

@@ -7,14 +7,14 @@ import { analyzeDeal } from "@/lib/acquisition";
 import { useState, useMemo } from "react";
 
 export default function RedTeamPage() {
-  const { deals } = useDealStore();
+  const { deals, assumptions } = useDealStore();
   const currentDeal = deals[0];
   const [selectedDealId, setSelectedDealId] = useState(currentDeal?.id);
 
   const analysis = useMemo(() => {
     const deal = deals.find((d) => d.id === selectedDealId) ?? deals[0];
-    return deal ? analyzeDeal(deal) : null;
-  }, [selectedDealId, deals]);
+    return deal ? analyzeDeal(deal, assumptions) : null;
+  }, [selectedDealId, deals, assumptions]);
 
   if (!analysis) {
     return <div className="text-muted-foreground">No deal selected.</div>;

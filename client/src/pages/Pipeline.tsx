@@ -156,7 +156,11 @@ export default function Pipeline() {
                 <div className="grid grid-cols-12 gap-2 items-center px-5 py-3.5 border-b border-border/60 last:border-b-0 hover:bg-muted/30 transition">
                   <div className="col-span-3 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">{deal.companyName}</span>
+                      <span className="font-medium truncate">
+                        {deal.companyName && deal.companyName.trim()
+                          ? deal.companyName
+                          : <span className="italic text-rose-600">Company name missing</span>}
+                      </span>
                       {(deal.isDemo || deal.isTest) && (
                         <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">
                           {deal.isTest ? "test" : "demo"}
@@ -170,8 +174,8 @@ export default function Pipeline() {
                     </div>
                   </div>
                   <div className="col-span-1 text-right text-sm font-mono">{revenue !== null ? fmtCurrencyExact(revenue) : "—"}</div>
-                  <div className="col-span-1 text-right text-sm font-mono">{fmtCurrencyExact(a.earningsUsed)}</div>
-                  <div className="col-span-1 text-right text-sm font-mono">{fmtCurrencyExact(a.capitalStack.purchasePriceUsed)}</div>
+                  <div className="col-span-1 text-right text-sm font-mono">{a.earningsUsed !== null ? fmtCurrencyExact(a.earningsUsed) : "missing"}</div>
+                  <div className="col-span-1 text-right text-sm font-mono">{a.capitalStack.purchasePriceUsed !== null ? fmtCurrencyExact(a.capitalStack.purchasePriceUsed) : "missing"}</div>
                   <div className="col-span-1 text-right text-sm font-mono">{multiple !== null ? fmtMultiple(multiple) : "—"}</div>
                   <div className="col-span-1 text-right text-sm font-mono">{margin !== null ? `${(margin * 100).toFixed(1)}%` : "—"}</div>
                   <div className="col-span-1 flex justify-center">

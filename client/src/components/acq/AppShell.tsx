@@ -12,6 +12,7 @@ import {
   Zap,
   CheckCircle,
   AlertTriangle,
+  Layers,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, Link } from "wouter";
@@ -20,6 +21,7 @@ const NAV = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/pipeline", label: "Pipeline", icon: Target },
   { path: "/analyze", label: "Deal Analyzer", icon: Calculator },
+  { path: "/underwriting", label: "Underwriting", icon: Layers },
   { path: "/advisor", label: "Deal Copilot", icon: Bot },
   { path: "/exports", label: "Exports", icon: FileText },
   { path: "/assumptions", label: "Capital Stack", icon: SlidersHorizontal },

@@ -167,14 +167,22 @@ function riskPoints(a: ScoreInputs["analysis"]): DealScoreContribution {
 
   // Apply a confidence haircut so a buyer who only scored 2 of 5 factors does
   // NOT get the same Risk credit as one who scored all 5. This is the direct
-  // fix for Issue 2 ("15/20 with 4 missing”).
+  // fix for Issue 2 ("15/20 with 4 missing”). Hard cap the maximum points
+  // available too, not just the haircut, so the displayed numerator can never
+  // be misleading even if avg is very low.
   const haircutFactor =
     a.risk.riskConfidence === "high"
       ? 1
       : a.risk.riskConfidence === "medium"
-        ? 0.6
-        : 0.35; // low
-  const earned = Math.round(baseEarned * haircutFactor);
+        ? 0.5
+        : 0.2; // low
+  const maxAllowed =
+    a.risk.riskConfidence === "high"
+      ? 20
+      : a.risk.riskConfidence === "medium"
+        ? 12
+        : 6; // low
+  const earned = Math.min(maxAllowed, Math.round(baseEarned * haircutFactor));
 
   const note =
     haircutFactor === 1

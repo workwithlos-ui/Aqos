@@ -14,6 +14,7 @@ export function detectMissingData(input: DealInput): MissingDataResult {
   const important: string[] = [];
   const nice: string[] = [];
 
+  if (!input.companyName || !input.companyName.trim()) critical.push("Company name");
   if (!has(input.annualRevenue)) critical.push("Annual revenue");
   if (!has(input.annualEBITDA) && !has(input.annualSDE))
     critical.push("Annual EBITDA or SDE");

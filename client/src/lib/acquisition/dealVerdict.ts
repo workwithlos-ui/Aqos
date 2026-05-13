@@ -65,7 +65,7 @@ function assessConfidence(a: DealAnalysis): ConfidenceAssessment {
   const reasonText =
     reasons.length === 0
       ? "Headline math and diligence completeness both meet the bar for a final recommendation."
-      : `Headline math is workable, but: ${reasons.join("; ")}.`;
+      : `Core math is available, but ${reasons.join("; ")}.`;
 
   return { confidence, isPreliminary, reason: reasonText };
 }

@@ -52,9 +52,11 @@ export default function Advisor() {
           <div className="metric-label">Deal Copilot</div>
           <h1 className="font-display text-3xl font-semibold mt-1">Acquisition Copilot</h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-            The Copilot only interprets verified outputs from the deterministic
-            engine. It will not invent revenue, DSCR, multiples, or risk scores,
-            and it will not override the engine's verdict.
+            The Copilot is wired to the AdvisorContext built from the deterministic
+            engine. It cannot read raw deal data, cannot recompute math, cannot
+            invent revenue / EBITDA / SDE / DSCR / multiples / risk scores / verdicts,
+            and cannot override the engine. Any field the engine flagged as
+            <span className="font-mono"> missing </span> is reported as missing.
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400 rounded-full px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30">

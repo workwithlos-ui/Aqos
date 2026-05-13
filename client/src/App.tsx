@@ -16,6 +16,7 @@ import WorkingCapital from "./pages/WorkingCapital";
 import Integration from "./pages/Integration";
 import Governance from "./pages/Governance";
 import RedTeam from "./pages/RedTeam";
+import Underwriting from "./pages/Underwriting";
 import NotFound from "./pages/NotFound";
 
 function Router() {
@@ -26,6 +27,8 @@ function Router() {
         <Route path="/pipeline" component={Pipeline} />
         <Route path="/analyze" component={DealAnalyzer} />
         <Route path="/analyze/:id" component={DealAnalyzer} />
+        <Route path="/underwriting" component={Underwriting} />
+        <Route path="/underwriting/:id" component={Underwriting} />
         <Route path="/advisor" component={Advisor} />
         <Route path="/exports" component={Exports} />
         <Route path="/exports/:id" component={Exports} />
