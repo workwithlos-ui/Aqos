@@ -45,7 +45,7 @@ export default function Pipeline() {
       const isDemoTest = deal.isDemo || deal.isTest;
       if (!showDemo && isDemoTest) return false;
       if (bucket === "Demo/Test" && !isDemoTest) return false;
-      if (bucket !== "All" && bucket !== "Demo/Test" && analysis.score.bucket !== bucket) return false;
+      if (bucket !== "All" && bucket !== "Demo/Test" && analysis.finalBucket !== bucket) return false;
       if (q) {
         const hay = `${deal.companyName} ${deal.industry ?? ""} ${deal.location ?? ""}`.toLowerCase();
         if (!hay.includes(q.toLowerCase())) return false;
@@ -57,7 +57,7 @@ export default function Pipeline() {
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
     analyses.forEach(({ deal, analysis }) => {
-      const key = deal.isDemo || deal.isTest ? "Demo/Test" : analysis.score.bucket;
+      const key = deal.isDemo || deal.isTest ? "Demo/Test" : analysis.finalBucket;
       map[key] = (map[key] || 0) + 1;
     });
     map.All = analyses.length;

@@ -214,6 +214,9 @@ export function analyzeDeal(
   const missingData = detectMissingData(input);
 
   const partial: DealAnalysis = {
+    finalBucket: "Watch",
+    finalBucketReason: "Engine has not yet finalized the analysis.",
+    acquisitionPriorityGate: { passed: false, reasons: ["Engine has not yet finalized the analysis."], checks: [] },
     dealId: input.id,
     companyName: input.companyName,
     isDemo: !!input.isDemo,
@@ -287,28 +290,216 @@ export function analyzeDeal(
   partial.redTeam = computeRedTeam(partial);
   partial.governance = computeGovernance(partial);
 
-  // Off-thesis blocks Acquisition Priority unless exception approved
-  if (partial.thesis.bucket === "Off-Thesis" && !partial.thesis.exceptionApproved) {
-    if (partial.score.bucket === "Acquisition Priority") {
-      partial.score.bucket = "Diligence Priority";
-    }
-  }
-
-  // Red freeze blocks Acquisition Priority and Close Ready
-  if (partial.freeze.status === "red") {
-    if (partial.score.bucket === "Acquisition Priority") {
-      partial.score.bucket = "Diligence Priority";
-    }
-    partial.governance.closeReady = false;
-  }
-
   // Working capital missing blocks Close Ready
   if (partial.workingCapital.status === "missing") {
     partial.governance.closeReady = false;
   }
+  if (partial.freeze.status === "red") {
+    partial.governance.closeReady = false;
+  }
+
+  // ---------------------------------------------------------------------
+  // FINAL BUCKET — single source of truth consumed by every UI/advisor/export.
+  // Replaces the previous practice of letting `score.bucket` and
+  // `verdict.verdict` drift apart. The gate is intentionally strict: a deal
+  // is only "Acquisition Priority" if every dimension passes. Anything less
+  // is downgraded with a human-readable reason.
+  // ---------------------------------------------------------------------
+  const gate = computeAcquisitionPriorityGate(partial);
+  partial.acquisitionPriorityGate = gate;
+  const { finalBucket, finalBucketReason } = resolveFinalBucket(partial, gate);
+  partial.finalBucket = finalBucket;
+  partial.finalBucketReason = finalBucketReason;
+  partial.score.bucket = finalBucket; // keep legacy field in lockstep
 
   partial.nextActions = nextActionsFor(partial);
   return partial;
+}
+
+/**
+ * The 8-check Acquisition Priority gate. ALL checks must pass — otherwise the
+ * deal cannot be promoted to Acquisition Priority regardless of score.
+ */
+function computeAcquisitionPriorityGate(
+  a: DealAnalysis,
+): DealAnalysis["acquisitionPriorityGate"] {
+  const checks: Array<{ name: string; passed: boolean; detail: string }> = [];
+
+  const coreMathOk =
+    a.missingData.canUnderwrite &&
+    a.earningsUsed !== null &&
+    a.earningsUsed > 0 &&
+    a.capitalStack.purchasePriceUsed !== null;
+  checks.push({
+    name: "Core math works",
+    passed: coreMathOk,
+    detail: coreMathOk
+      ? "Revenue, earnings, and price all present and positive."
+      : "Cannot underwrite — earnings, revenue, or price missing.",
+  });
+
+  const dscrAfter = a.dscrPair.afterStandby.value;
+  const dscrOk = dscrAfter !== null && dscrAfter >= 1.4;
+  checks.push({
+    name: "DSCR after standby \u2265 1.40x",
+    passed: dscrOk,
+    detail:
+      dscrAfter === null
+        ? "DSCR after standby is missing."
+        : `DSCR after standby is ${dscrAfter.toFixed(2)}x (need \u2265 1.40x).`,
+  });
+
+  const noCritical = a.missingData.criticalMissing.length === 0;
+  checks.push({
+    name: "No critical missing data",
+    passed: noCritical,
+    detail: noCritical
+      ? "All critical inputs present."
+      : `Critical missing: ${a.missingData.criticalMissing.join(", ")}.`,
+  });
+
+  const importantOk = a.missingData.importantMissing.length <= 5;
+  checks.push({
+    name: "Important missing \u2264 5",
+    passed: importantOk,
+    detail: `${a.missingData.importantMissing.length} important diligence items missing (cap 5).`,
+  });
+
+  const diligenceContrib = a.score.contributions.find((c) => c.category === "Diligence");
+  const diligenceEarned = diligenceContrib?.earned ?? 0;
+  const diligenceOk = diligenceEarned >= 3;
+  checks.push({
+    name: "Diligence \u2265 3 / 10",
+    passed: diligenceOk,
+    detail: `Diligence score ${diligenceEarned}/10 (need \u2265 3).`,
+  });
+
+  const riskOk = a.risk.riskConfidence === "high" || a.risk.riskConfidence === "medium";
+  checks.push({
+    name: "Risk panel materially complete",
+    passed: riskOk && !a.risk.hasCritical,
+    detail: a.risk.hasCritical
+      ? "Critical risk factor present."
+      : `Risk confidence: ${a.risk.riskConfidence} (${a.risk.totalFactors - a.risk.missingCount}/${a.risk.totalFactors} factors scored).`,
+  });
+
+  const blockerKeys = [
+    a.missingData.importantMissing.includes("Revenue trend (growing / flat / declining)")
+      ? "Revenue trend unknown"
+      : null,
+    a.missingData.importantMissing.includes("Customer concentration percentage")
+      ? "Customer concentration unknown"
+      : null,
+    a.missingData.importantMissing.includes("Owner role / operating responsibility")
+      ? "Owner role unknown"
+      : null,
+  ].filter(Boolean) as string[];
+  const noBlockers = blockerKeys.length === 0 && a.freeze.status !== "red";
+  checks.push({
+    name: "No unresolved blockers",
+    passed: noBlockers,
+    detail:
+      blockerKeys.length > 0
+        ? `Blockers: ${blockerKeys.join("; ")}.`
+        : a.freeze.status === "red"
+          ? "Deal freeze is RED."
+          : "No blocking unknowns.",
+  });
+
+  // LOI ready or near-ready: full LOI ready, or only one of P&L / tax returns missing.
+  const loiReady = a.missingData.canGenerateLOI;
+  const loiNearReady =
+    !loiReady &&
+    (!!a.missingData.importantMissing.includes("P&L statements") !==
+      !!a.missingData.importantMissing.includes("Tax returns"));
+  const loiOk = loiReady || loiNearReady;
+  checks.push({
+    name: "LOI ready or near-ready",
+    passed: loiOk,
+    detail: loiReady
+      ? "LOI ready (P&L + tax returns received)."
+      : loiNearReady
+        ? "LOI near-ready (one of P&L / tax returns outstanding)."
+        : "LOI not ready — multiple core documents outstanding.",
+  });
+
+  // Thesis fit: off-thesis without an approved exception blocks promotion.
+  const thesisOk = !(a.thesis.bucket === "Off-Thesis" && !a.thesis.exceptionApproved);
+  checks.push({
+    name: "Thesis fit (or exception approved)",
+    passed: thesisOk,
+    detail: thesisOk
+      ? `Thesis bucket: ${a.thesis.bucket}.`
+      : "Off-Thesis and no exception approved.",
+  });
+
+  const failed = checks.filter((c) => !c.passed);
+  return {
+    passed: failed.length === 0,
+    reasons: failed.map((c) => `${c.name}: ${c.detail}`),
+    checks,
+  };
+}
+
+function resolveFinalBucket(
+  a: DealAnalysis,
+  gate: DealAnalysis["acquisitionPriorityGate"],
+): { finalBucket: import("./types").FinalBucket; finalBucketReason: string } {
+  // 1) Hard input gates win.
+  if (!a.missingData.canUnderwrite) {
+    return {
+      finalBucket: "Cannot Underwrite",
+      finalBucketReason: `Cannot underwrite: ${a.missingData.criticalMissing.join(", ") || "core inputs missing"}.`,
+    };
+  }
+  if (a.score.status === "review_required") {
+    return {
+      finalBucket: "Scoring Review",
+      finalBucketReason:
+        a.score.blockerReason ?? "Score conflicts with fundamentals.",
+    };
+  }
+
+  // 2) Verdict drives the bucket, with strict gating for Acquisition Priority.
+  const v = a.verdict.verdict;
+  if (v === "KILL") {
+    return { finalBucket: "Kill/Pause", finalBucketReason: a.verdict.rationale };
+  }
+  if (v === "CANNOT UNDERWRITE") {
+    return { finalBucket: "Cannot Underwrite", finalBucketReason: a.verdict.rationale };
+  }
+  if (v === "SCORING REVIEW REQUIRED") {
+    return { finalBucket: "Scoring Review", finalBucketReason: a.verdict.rationale };
+  }
+  if (v === "DILIGENCE PRIORITY") {
+    return {
+      finalBucket: "Diligence Priority",
+      finalBucketReason: a.verdict.rationale,
+    };
+  }
+  if (v === "RENEGOTIATE") {
+    return { finalBucket: "Watch", finalBucketReason: a.verdict.rationale };
+  }
+  if (v === "PURSUE WITH CAUTION") {
+    // Cautious pursue requires diligence work first.
+    return {
+      finalBucket: "Diligence Priority",
+      finalBucketReason:
+        "Verdict is PURSUE WITH CAUTION — confirm diligence and risk completeness before promoting to Acquisition Priority.",
+    };
+  }
+  // v === "PURSUE" → only Acquisition Priority if every gate check passes.
+  if (gate.passed) {
+    return {
+      finalBucket: "Acquisition Priority",
+      finalBucketReason:
+        "Verdict is PURSUE and every Acquisition Priority gate check is satisfied.",
+    };
+  }
+  return {
+    finalBucket: "Diligence Priority",
+    finalBucketReason: `Verdict is PURSUE, but Acquisition Priority gate failed: ${gate.reasons.join("; ")}`,
+  };
 }
 
 export { fmtCurrencyExact, fmtMultiple };

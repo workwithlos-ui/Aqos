@@ -220,6 +220,13 @@ describe("Issue 3 — Preliminary score labelling", () => {
       customerConcentrationPct: 12,
       employeeCount: 28,
       yearsInBusiness: 18,
+      riskInputs: {
+        financialStabilityRisk: 4,
+        customerConcentrationRisk: 4,
+        ownerDependencyRisk: 4,
+        industryRisk: 4,
+        operationalComplexityRisk: 4,
+      },
       diligence: {
         taxReturnsReceived: true,
         pnlReceived: true,
@@ -248,7 +255,7 @@ describe("Issue 4 — Missing data influences confidence and prevents Acquisitio
       annualEBITDA: 1_100_000,
       askingPrice: 3_800_000,
     });
-    expect(a.score.bucket).not.toBe("Acquisition Priority");
+    expect(a.finalBucket).not.toBe("Acquisition Priority");
     expect(a.verdict.isPreliminary).toBe(true);
   });
 });
@@ -268,7 +275,7 @@ describe("Test 7 — Big revenue, bad earnings (acceptance check)", () => {
       a.verdict.verdict,
     );
     expect(a.verdict.verdict).not.toBe("PURSUE");
-    expect(a.score.bucket).not.toBe("Acquisition Priority");
+    expect(a.finalBucket).not.toBe("Acquisition Priority");
   });
 });
 
@@ -576,5 +583,202 @@ describe("Regression — stress test re-uses the same engine (DSCR comes from an
       expect(ratio).toBeLessThan(1);
       expect(ratio).toBeGreaterThan(0.7);
     }
+  });
+});
+
+
+// ===========================================================================
+// Iteration 5 \u2014 ProFlow contradiction lock
+// Verifies that score-bucket and verdict-bucket can never disagree again, and
+// that the Acquisition Priority gate strictly enforces all six acceptance
+// rules called out in the QA report.
+// ===========================================================================
+
+describe("Iteration 5 \u2014 ProFlow scenario (verdict/bucket contradiction)", () => {
+  // ProFlow QA scenario: math works, but risk is empty and diligence is 0/10.
+  const proflow = analyzeDeal({
+    companyName: "ProFlow Plumbing",
+    industry: "plumbing",
+    annualRevenue: 3_200_000,
+    annualEBITDA: 950_000,
+    annualSDE: 1_050_000,
+    askingPrice: 3_200_000,
+  });
+
+  it("finalBucket is consistent with verdict (no Acquisition Priority while verdict says Diligence Priority)", () => {
+    if (proflow.verdict.verdict === "DILIGENCE PRIORITY") {
+      expect(proflow.finalBucket).toBe("Diligence Priority");
+    }
+    // The bucket the score module reports MUST equal finalBucket.
+    expect(proflow.score.bucket).toBe(proflow.finalBucket);
+  });
+
+  it("acquisitionPriorityGate is NOT passed when risk / diligence is empty", () => {
+    expect(proflow.acquisitionPriorityGate.passed).toBe(false);
+    expect(proflow.acquisitionPriorityGate.reasons.length).toBeGreaterThan(0);
+  });
+
+  it("risk earned is NOT 15/20 when all risk inputs are missing", () => {
+    const riskContrib = proflow.score.contributions.find((c) => c.category === "Risk");
+    expect(riskContrib).toBeDefined();
+    // riskConfidence should be insufficient (0 buyer-provided risk factors).
+    expect(proflow.risk.riskConfidence).toBe("insufficient");
+    // With insufficient confidence, risk earned must be capped <= 4.
+    expect((riskContrib?.earned ?? 0)).toBeLessThanOrEqual(4);
+  });
+
+  it("finalBucket is not Acquisition Priority", () => {
+    expect(proflow.finalBucket).not.toBe("Acquisition Priority");
+  });
+
+  it("score is preliminary when risk / diligence is incomplete", () => {
+    expect(proflow.verdict.isPreliminary).toBe(true);
+    expect(proflow.scoreLabel.toLowerCase()).toContain("preliminary");
+  });
+});
+
+describe("Iteration 5 \u2014 Acquisition Priority gate acceptance rules", () => {
+  it("Diligence 0/10 prevents Acquisition Priority (Rule 2)", () => {
+    const a = analyzeDeal({
+      companyName: "Zero Diligence",
+      industry: "plumbing",
+      annualRevenue: 3_200_000,
+      annualEBITDA: 950_000,
+      annualSDE: 1_050_000,
+      askingPrice: 3_000_000,
+      // No diligenceChecklist => diligence earned = 0.
+    });
+    const diligence = a.score.contributions.find((c) => c.category === "Diligence");
+    expect(diligence?.earned).toBe(0);
+    expect(a.finalBucket).not.toBe("Acquisition Priority");
+  });
+
+  it("Important missing > 5 prevents Acquisition Priority (Rule 2)", () => {
+    const a = analyzeDeal({
+      companyName: "Lots of Gaps",
+      industry: "plumbing",
+      annualRevenue: 3_000_000,
+      annualEBITDA: 800_000,
+      annualSDE: 900_000,
+      askingPrice: 2_800_000,
+    });
+    expect(a.missingData.importantMissing.length).toBeGreaterThan(5);
+    expect(a.finalBucket).not.toBe("Acquisition Priority");
+  });
+
+  it("Missing risk fields prevent 15/20 risk award and Acquisition Priority (Rule 3)", () => {
+    const a = analyzeDeal({
+      companyName: "Empty Risk Deal",
+      industry: "plumbing",
+      annualRevenue: 3_000_000,
+      annualEBITDA: 900_000,
+      askingPrice: 2_700_000,
+    });
+    const risk = a.score.contributions.find((c) => c.category === "Risk");
+    expect((risk?.earned ?? 0)).toBeLessThan(15);
+    expect(a.risk.riskConfidence).not.toBe("high");
+    expect(a.finalBucket).not.toBe("Acquisition Priority");
+  });
+
+  it("Preliminary score label is used when diligence/risk incomplete (Rule 4)", () => {
+    const a = analyzeDeal({
+      companyName: "Preliminary Label Test",
+      industry: "plumbing",
+      annualRevenue: 3_000_000,
+      annualEBITDA: 900_000,
+      askingPrice: 2_700_000,
+    });
+    expect(a.scoreLabel).toMatch(/preliminary/i);
+  });
+
+  it("Acquisition Priority promotion requires the full gate (Rule 5)", () => {
+    const a = analyzeDeal({
+      companyName: "Strong Plumbing",
+      industry: "plumbing",
+      annualRevenue: 4_500_000,
+      annualEBITDA: 1_400_000,
+      annualSDE: 1_500_000,
+      askingPrice: 3_200_000,
+      // Risk panel materially complete + diligence delivered.
+      riskInputs: {
+        financialStabilityRisk: 4,
+        customerConcentrationRisk: 4,
+        ownerDependencyRisk: 4,
+        industryRisk: 4,
+        operationalComplexityRisk: 4,
+      },
+      diligence: {
+        taxReturnsReceived: true,
+        pnlReceived: true,
+        balanceSheetReceived: true,
+        cashFlowStatementReceived: true,
+        addBacksDocumented: true,
+        customerListReceived: true,
+        contractsReceived: true,
+        employeeRosterReceived: true,
+        leaseReviewed: true,
+        debtScheduleReceived: true,
+        qoeComplete: true,
+      },
+      revenueTrend: "growing",
+      customerConcentrationPct: 10,
+      ownerRole: "GM with hired-in successor",
+      yearsInBusiness: 14,
+    });
+    // With strong inputs the gate should pass and bucket should be Acquisition Priority.
+    expect(a.acquisitionPriorityGate.passed).toBe(true);
+    expect(a.finalBucket).toBe("Acquisition Priority");
+  });
+
+  it("Blocker (revenue trend unknown) overrides Acquisition Priority (Rule 6)", () => {
+    const a = analyzeDeal({
+      companyName: "Blocker Override",
+      industry: "plumbing",
+      annualRevenue: 4_500_000,
+      annualEBITDA: 1_400_000,
+      annualSDE: 1_500_000,
+      askingPrice: 3_200_000,
+      riskInputs: {
+        financialStabilityRisk: 4,
+        customerConcentrationRisk: 4,
+        ownerDependencyRisk: 4,
+        industryRisk: 4,
+        operationalComplexityRisk: 4,
+      },
+      diligence: {
+        taxReturnsReceived: true,
+        pnlReceived: true,
+        balanceSheetReceived: true,
+        cashFlowStatementReceived: true,
+        addBacksDocumented: true,
+        customerListReceived: true,
+        contractsReceived: true,
+        employeeRosterReceived: true,
+        leaseReviewed: true,
+        debtScheduleReceived: true,
+        qoeComplete: true,
+      },
+      // revenueTrend omitted on purpose \u2192 unknown \u2192 blocker.
+      customerConcentrationPct: 10,
+      ownerRole: "GM",
+      yearsInBusiness: 14,
+    });
+    expect(a.finalBucket).not.toBe("Acquisition Priority");
+    expect(a.acquisitionPriorityGate.passed).toBe(false);
+    expect(a.acquisitionPriorityGate.reasons.some((r) => /Blocker|Revenue trend/i.test(r))).toBe(
+      true,
+    );
+  });
+
+  it("Pipeline/advisor consume the same finalBucket as the analyzer (Rule 1)", () => {
+    const a = analyzeDeal({
+      companyName: "Pipeline Consistency",
+      industry: "plumbing",
+      annualRevenue: 3_200_000,
+      annualEBITDA: 950_000,
+      askingPrice: 3_200_000,
+    });
+    // score.bucket and finalBucket must always agree.
+    expect(a.score.bucket).toBe(a.finalBucket);
   });
 });

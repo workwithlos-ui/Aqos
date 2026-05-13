@@ -26,7 +26,7 @@ export default function Dashboard() {
   );
 
   const bucket = (name: string) =>
-    liveAnalyses.filter((a) => a.score.bucket === name);
+    liveAnalyses.filter((a) => a.finalBucket === name);
 
   const acquisition = bucket("Acquisition Priority");
   const diligence = bucket("Diligence Priority");

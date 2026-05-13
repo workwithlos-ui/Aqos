@@ -105,8 +105,11 @@ export default function DealAnalyzer() {
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <VerdictPill verdict={analysis.verdict.verdict} size="md" />
             <DscrPill label={`DSCR after standby ${analysis.dscrPair.afterStandby.display}`} value={analysis.dscrPair.afterStandby.value} />
-            <span className="text-xs font-mono px-2 py-1 rounded border border-border bg-card">
-              {analysis.scoreLabel} {Math.round(analysis.score.score)}/100 · {analysis.score.bucket}
+            <span
+              className="text-xs font-mono px-2 py-1 rounded border border-border bg-card"
+              title={analysis.finalBucketReason}
+            >
+              {analysis.scoreLabel} {Math.round(analysis.score.score)}/100 · {analysis.finalBucket}
             </span>
             <span className={`text-xs font-mono px-2 py-1 rounded border ${
               analysis.verdict.confidence === "high"
@@ -428,7 +431,7 @@ export default function DealAnalyzer() {
               <h2 className="font-display text-lg font-semibold mb-3">Deterministic score</h2>
               <div className="flex items-baseline gap-3 mb-1">
                 <div className="font-display text-4xl font-semibold">{Math.round(analysis.score.score)}</div>
-                <div className="text-sm text-muted-foreground">/ 100 · {analysis.score.bucket}</div>
+                <div className="text-sm text-muted-foreground">/ 100 · {analysis.finalBucket}</div>
               </div>
               <div className="text-xs text-muted-foreground mb-3">
                 <span className="font-semibold">{analysis.scoreLabel}</span>
@@ -464,6 +467,42 @@ export default function DealAnalyzer() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Acquisition Priority gate — single source of truth for bucket */}
+          <div className="panel p-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+              <h2 className="font-display text-lg font-semibold">Acquisition Priority gate</h2>
+              <div className="text-xs font-mono">
+                {analysis.acquisitionPriorityGate.passed ? (
+                  <span className="px-2 py-0.5 rounded border border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
+                    All checks pass — eligible
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded border border-amber-300/60 bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                    {analysis.acquisitionPriorityGate.reasons.length} check(s) failed — cannot promote
+                  </span>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3 max-w-2xl">
+              {analysis.finalBucketReason}
+            </p>
+            <ul className="text-xs flex flex-col gap-1.5">
+              {analysis.acquisitionPriorityGate.checks.map((c) => (
+                <li key={c.name} className="flex items-start gap-2">
+                  <span
+                    className={`mt-0.5 size-2 rounded-full flex-shrink-0 ${
+                      c.passed ? "bg-emerald-500" : "bg-rose-500"
+                    }`}
+                  />
+                  <span className="flex-1">
+                    <span className="font-semibold">{c.name}</span>
+                    <span className="text-muted-foreground"> · {c.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
 
           {/* Verdict + actions + missing data */}

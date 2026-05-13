@@ -67,7 +67,14 @@ export interface AdvisorDealContext {
   scoreOutOf100: number;
   scoreLabel: string;
   isPreliminary: boolean;
-  scoreBucket: DealAnalysis["score"]["bucket"];
+  /** Final deterministic bucket. Identical to DealAnalysis.finalBucket. */
+  scoreBucket: DealAnalysis["finalBucket"];
+  finalBucketReason: string;
+  acquisitionPriorityGate: {
+    passed: boolean;
+    reasons: string[];
+    checks: Array<{ name: string; passed: boolean; detail: string }>;
+  };
   capsApplied: string[];
   scoreNotes: string[];
 
@@ -228,7 +235,9 @@ export function buildAdvisorDealContext(a: DealAnalysis): AdvisorDealContext {
     scoreOutOf100: Math.round(a.score.score),
     scoreLabel: a.scoreLabel,
     isPreliminary: a.verdict.isPreliminary,
-    scoreBucket: a.score.bucket,
+    scoreBucket: a.finalBucket,
+    finalBucketReason: a.finalBucketReason,
+    acquisitionPriorityGate: a.acquisitionPriorityGate,
     capsApplied: a.score.capsApplied,
     scoreNotes: a.score.contributions.map((c) => `${c.category}: ${c.earned}/${c.available} — ${c.notes}`),
     missingCritical: a.missingData.criticalMissing,

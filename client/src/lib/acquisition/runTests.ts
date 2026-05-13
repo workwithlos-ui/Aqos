@@ -359,13 +359,13 @@ export function runSingleSpec(def: SpecDefinition): SpecResult {
 
   if (def.expect.bucketNotIn && def.expect.bucketNotIn.length > 0) {
     const okBucket = !def.expect.bucketNotIn.includes(
-      analysis.score.bucket as (typeof def.expect.bucketNotIn)[number],
+      analysis.finalBucket as (typeof def.expect.bucketNotIn)[number],
     );
     assertions.push(
       assertion(
-        "Bucket NOT in forbidden set",
+        "Final bucket NOT in forbidden set",
         `not in ${def.expect.bucketNotIn.join(" / ")}`,
-        analysis.score.bucket,
+        analysis.finalBucket,
         okBucket,
       ),
     );

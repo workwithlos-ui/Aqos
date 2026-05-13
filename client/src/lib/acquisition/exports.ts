@@ -25,7 +25,10 @@ function header(a: DealAnalysis, title: string): string {
   const today = new Date().toISOString().slice(0, 10);
   const tag = a.isDemo ? "[DEMO]" : a.isTest ? "[TEST]" : "";
   const preliminary = a.verdict.isPreliminary ? " *(PRELIMINARY)*" : "";
-  return `# ${title} — ${a.companyName} ${tag}\n\nGenerated: ${today}\nDeal Verdict: **${a.verdict.verdict}**${preliminary}\n${a.scoreLabel}: ${Math.round(a.score.score)} / 100 (${a.score.bucket})\nConfidence: ${a.verdict.confidence} — ${a.verdict.confidenceReason}\n`;
+  const gateSummary = a.acquisitionPriorityGate.passed
+    ? "Acquisition Priority gate: ALL CHECKS PASS."
+    : `Acquisition Priority gate: NOT PROMOTED — ${a.acquisitionPriorityGate.reasons.join("; ")}.`;
+  return `# ${title} — ${a.companyName} ${tag}\n\nGenerated: ${today}\nDeal Verdict: **${a.verdict.verdict}**${preliminary}\n${a.scoreLabel}: ${Math.round(a.score.score)} / 100 (${a.finalBucket})\nBucket reason: ${a.finalBucketReason}\n${gateSummary}\nConfidence: ${a.verdict.confidence} — ${a.verdict.confidenceReason}\n`;
 }
 
 export function generateICMemo(a: DealAnalysis): ExportPayload {

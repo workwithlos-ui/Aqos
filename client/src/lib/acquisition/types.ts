@@ -307,14 +307,23 @@ export interface DealScoreResult {
   contributions: DealScoreContribution[];
   capsApplied: string[];
   blockerReason?: string;
-  bucket:
-    | "Acquisition Priority"
-    | "Diligence Priority"
-    | "Watch"
-    | "Kill/Pause"
-    | "Scoring Review"
-    | "Cannot Underwrite";
+  bucket: FinalBucket;
 }
+
+/**
+ * The single, deterministic post-verdict bucket. Everything user-facing
+ * (Pipeline, Dashboard, Analyzer, Copilot, exports, IC memo) MUST read this
+ * field. The score-only bucket is no longer authoritative; it is folded into
+ * `finalBucket` by the orchestrator after the verdict and the institutional
+ * gates (Acquisition Priority gate, freeze, thesis, working capital).
+ */
+export type FinalBucket =
+  | "Acquisition Priority"
+  | "Diligence Priority"
+  | "Watch"
+  | "Kill/Pause"
+  | "Scoring Review"
+  | "Cannot Underwrite"
 
 export interface MissingDataResult {
   criticalMissing: string[];
@@ -590,6 +599,26 @@ export interface DealAnalysis {
 
   /** Final, post-confidence headline label for the score, e.g. "Score" or "Preliminary Score". */
   scoreLabel: string;
+
+  /**
+   * Single deterministic bucket consumed by every UI / advisor / export
+   * surface. Computed by the orchestrator from verdict + score + gates so
+   * Pipeline/Dashboard/Analyzer/Copilot can never disagree.
+   */
+  finalBucket: FinalBucket;
+
+  /** Human-readable explanation of why finalBucket has its value. */
+  finalBucketReason: string;
+
+  /**
+   * Detailed pass/fail trace of the Acquisition Priority gate. Surfaced on
+   * the Analyzer so a buyer can see exactly why a deal cannot be promoted.
+   */
+  acquisitionPriorityGate: {
+    passed: boolean;
+    reasons: string[];
+    checks: Array<{ name: string; passed: boolean; detail: string }>;
+  };
 
   // Institutional M&A modules.
   thesis: ThesisFitResult;

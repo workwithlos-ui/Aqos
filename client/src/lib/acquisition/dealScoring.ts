@@ -174,14 +174,18 @@ function riskPoints(a: ScoreInputs["analysis"]): DealScoreContribution {
     a.risk.riskConfidence === "high"
       ? 1
       : a.risk.riskConfidence === "medium"
-        ? 0.5
-        : 0.2; // low
+        ? 0.45
+        : a.risk.riskConfidence === "low"
+          ? 0.2
+          : 0.1; // insufficient
   const maxAllowed =
     a.risk.riskConfidence === "high"
       ? 20
       : a.risk.riskConfidence === "medium"
-        ? 12
-        : 6; // low
+        ? 10
+        : a.risk.riskConfidence === "low"
+          ? 4
+          : 2; // insufficient — we already short-circuit above, but keep tight here too
   const earned = Math.min(maxAllowed, Math.round(baseEarned * haircutFactor));
 
   const note =
