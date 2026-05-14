@@ -782,3 +782,146 @@ describe("Iteration 5 \u2014 Acquisition Priority gate acceptance rules", () => 
     expect(a.score.bucket).toBe(a.finalBucket);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ITERATION 6 — Buyer-grade advisory regression tests
+// ---------------------------------------------------------------------------
+
+describe("Buyer cash flow: never returns NaN/Infinity", () => {
+  for (const def of TEST_DEFINITIONS) {
+    it(`${def.name}: buyerCashFlow fields are finite or null`, () => {
+      const a = analyzeDeal(def.input);
+      const vals = [
+        a.buyerCashFlow.buyerCashFlow.value,
+        a.buyerCashFlow.buyerCashFlowDuringStandby.value,
+        a.buyerCashFlow.cashOnCashReturn.value,
+        a.buyerCashFlow.requiredCapEx,
+        a.buyerCashFlow.workingCapitalReserve,
+      ];
+      for (const v of vals) {
+        const ok = v === null || v === undefined || (Number.isFinite(v) && !Number.isNaN(v));
+        expect(ok, `buyerCashFlow field returned non-finite: ${v}`).toBe(true);
+      }
+    });
+  }
+});
+
+describe("Max supportable purchase price: never returns NaN/Infinity", () => {
+  for (const def of TEST_DEFINITIONS) {
+    it(`${def.name}: maxSupportablePP fields are finite or null`, () => {
+      const a = analyzeDeal(def.input);
+      const vals = [a.maxSupportablePP.at1_25x, a.maxSupportablePP.at1_50x, a.maxSupportablePP.at2_00x];
+      for (const v of vals) {
+        const ok = v === null || v === undefined || (Number.isFinite(v) && !Number.isNaN(v));
+        expect(ok, `maxSupportablePP field returned non-finite: ${v}`).toBe(true);
+      }
+    });
+  }
+});
+
+describe("Stress test: all scenarios have valid DSCR MetricResults", () => {
+  for (const def of TEST_DEFINITIONS) {
+    it(`${def.name}: stress scenarios have finite or null DSCR values`, () => {
+      const a = analyzeDeal(def.input);
+      for (const s of a.stressTest.scenarios) {
+        const vals = [s.dscrDuringStandby.value, s.dscrAfterStandby.value];
+        for (const v of vals) {
+          const ok = v === null || (Number.isFinite(v) && !Number.isNaN(v));
+          expect(ok, `Stress scenario "${s.label}" has non-finite DSCR: ${v}`).toBe(true);
+        }
+      }
+    });
+  }
+});
+
+describe("Refined verdict: always returns a non-empty verdict string", () => {
+  for (const def of TEST_DEFINITIONS) {
+    it(`${def.name}: refinedVerdict.verdict is non-empty`, () => {
+      const a = analyzeDeal(def.input);
+      expect(typeof a.refinedVerdict.verdict).toBe("string");
+      expect(a.refinedVerdict.verdict.length).toBeGreaterThan(0);
+      expect(a.refinedVerdict.buyerReason.length).toBeGreaterThan(0);
+    });
+  }
+});
+
+describe("Data quality: score is 0-100 and label is non-empty", () => {
+  for (const def of TEST_DEFINITIONS) {
+    it(`${def.name}: dataQuality.score is 0-100`, () => {
+      const a = analyzeDeal(def.input);
+      expect(a.dataQuality.score).toBeGreaterThanOrEqual(0);
+      expect(a.dataQuality.score).toBeLessThanOrEqual(100);
+      expect(typeof a.dataQuality.label).toBe("string");
+      expect(a.dataQuality.label.length).toBeGreaterThan(0);
+    });
+  }
+});
+
+describe("Recommended offer: prices are finite or null, structure is non-empty", () => {
+  for (const def of TEST_DEFINITIONS) {
+    it(`${def.name}: recommendedOffer fields are valid`, () => {
+      const a = analyzeDeal(def.input);
+      const vals = [a.recommendedOffer.openingOffer, a.recommendedOffer.targetPrice, a.recommendedOffer.maximumPrice, a.recommendedOffer.sellerNoteAmount, a.recommendedOffer.earnoutAmount];
+      for (const v of vals) {
+        const ok = v === null || v === undefined || (Number.isFinite(v) && !Number.isNaN(v));
+        expect(ok, `recommendedOffer field returned non-finite: ${v}`).toBe(true);
+      }
+      expect(typeof a.recommendedOffer.preferredStructure).toBe("string");
+      expect(a.recommendedOffer.preferredStructure.length).toBeGreaterThan(0);
+      expect(typeof a.recommendedOffer.rationale).toBe("string");
+    });
+  }
+});
+
+describe("Assumption badges: every badge has a non-empty field and valid status", () => {
+  const VALID_STATUSES = ["user-provided", "engine-calculated", "assumed", "missing", "needs-verification"] as const;
+  for (const def of TEST_DEFINITIONS) {
+    it(`${def.name}: all assumptionBadges have valid field + status`, () => {
+      const a = analyzeDeal(def.input);
+      for (const b of a.assumptionBadges) {
+        expect(b.field.length).toBeGreaterThan(0);
+        expect(VALID_STATUSES).toContain(b.status);
+      }
+    });
+  }
+});
+
+describe("ProFlow: big-revenue deal with missing risk stays Diligence Priority (regression)", () => {
+  it("ProFlow Plumbing: no risk inputs → risk capped, finalBucket = Diligence Priority", () => {
+    const a = analyzeDeal({
+      companyName: "ProFlow Plumbing",
+      industry: "plumbing",
+      annualRevenue: 3_200_000,
+      annualEBITDA: 950_000,
+      annualSDE: 1_050_000,
+      askingPrice: 3_200_000,
+    });
+    // Risk must be capped when all risk inputs are missing
+    expect(a.risk.riskConfidence).not.toBe("high");
+    expect(a.score.score).toBeLessThan(80);
+    expect(a.finalBucket).not.toBe("Acquisition Priority");
+    expect(a.finalBucket).toBe("Diligence Priority");
+    // Buyer cash flow must be finite or null
+    const bcf = a.buyerCashFlow.buyerCashFlow.value;
+    expect(bcf === null || Number.isFinite(bcf)).toBe(true);
+    // Stress test must have scenarios
+    expect(a.stressTest.scenarios.length).toBeGreaterThan(0);
+    // Max supportable PP must be finite or null
+    expect(a.maxSupportablePP.at1_25x === null || Number.isFinite(a.maxSupportablePP.at1_25x)).toBe(true);
+  });
+});
+
+describe("DSCR overrides valuation attractiveness", () => {
+  it("A deal with low DSCR cannot have refinedVerdict = Strong Pursue", () => {
+    // Big Revenue Bad Earnings — 4% margin, 7.5x EV/EBITDA, should be Kill/Pause
+    const a = analyzeDeal({
+      companyName: "Big Revenue Bad Earnings Test",
+      industry: "it services",
+      annualRevenue: 10_000_000,
+      annualEBITDA: 400_000,
+      askingPrice: 3_000_000,
+    });
+    expect(a.refinedVerdict.verdict).not.toBe("Strong Pursue");
+    expect(a.finalBucket).not.toBe("Acquisition Priority");
+  });
+});

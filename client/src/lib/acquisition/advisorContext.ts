@@ -126,6 +126,31 @@ export interface AdvisorDealContext {
 
   redTeamTopObjections: string[];
   unresolvedCriticalObjections: number;
+
+  // Buyer-grade advisory (Iteration 6)
+  buyerCashFlow: string;
+  buyerCashFlowDuringStandby: string;
+  cashOnCashReturn: string;
+  maxPPAt1_25x: string;
+  maxPPAt1_50x: string;
+  maxPPAt2_00x: string;
+  priceIsSupported: boolean;
+  stressRating: string;
+  worstCaseDscr: string;
+  allScenariosPass: boolean;
+  refinedVerdict: string;
+  refinedVerdictReason: string;
+  refinedVerdictConditions: string[];
+  openingOffer: string;
+  targetPrice: string;
+  maximumPrice: string;
+  preferredStructure: string;
+  sellerNoteAmount: string;
+  earnoutAmount: string;
+  requiredTransitionWeeks: number;
+  dataQualityScore: number;
+  dataQualityLabel: string;
+  dataQualityGaps: string[];
 }
 
 export interface AdvisorPortfolioContext {
@@ -286,6 +311,31 @@ export function buildAdvisorDealContext(a: DealAnalysis): AdvisorDealContext {
 
     redTeamTopObjections: a.redTeam.topObjections.map((o) => `${o.prompt} → ${o.finding}`),
     unresolvedCriticalObjections: a.redTeam.unresolvedCriticalCount,
+
+    // Buyer-grade advisory
+    buyerCashFlow: a.buyerCashFlow.buyerCashFlow.display,
+    buyerCashFlowDuringStandby: a.buyerCashFlow.buyerCashFlowDuringStandby.display,
+    cashOnCashReturn: a.buyerCashFlow.cashOnCashReturn.display,
+    maxPPAt1_25x: s(a.maxSupportablePP.at1_25x, "money"),
+    maxPPAt1_50x: s(a.maxSupportablePP.at1_50x, "money"),
+    maxPPAt2_00x: s(a.maxSupportablePP.at2_00x, "money"),
+    priceIsSupported: a.maxSupportablePP.priceIsSupported,
+    stressRating: a.stressTest.stressRating,
+    worstCaseDscr: a.stressTest.worstCaseDscr === null ? "missing" : `${a.stressTest.worstCaseDscr.toFixed(2)}x`,
+    allScenariosPass: a.stressTest.allScenariosPass,
+    refinedVerdict: a.refinedVerdict.verdict,
+    refinedVerdictReason: a.refinedVerdict.buyerReason,
+    refinedVerdictConditions: a.refinedVerdict.conditions,
+    openingOffer: s(a.recommendedOffer.openingOffer, "money"),
+    targetPrice: s(a.recommendedOffer.targetPrice, "money"),
+    maximumPrice: s(a.recommendedOffer.maximumPrice, "money"),
+    preferredStructure: a.recommendedOffer.preferredStructure,
+    sellerNoteAmount: s(a.recommendedOffer.sellerNoteAmount, "money"),
+    earnoutAmount: a.recommendedOffer.earnoutAmount !== null ? s(a.recommendedOffer.earnoutAmount, "money") : "none",
+    requiredTransitionWeeks: a.recommendedOffer.requiredTransitionWeeks,
+    dataQualityScore: a.dataQuality.score,
+    dataQualityLabel: a.dataQuality.label,
+    dataQualityGaps: [...a.dataQuality.criticalGaps, ...a.dataQuality.importantGaps],
   };
 }
 
@@ -317,7 +367,7 @@ You may:
   • escalate when score/verdict status is "Scoring Review" or "Cannot Underwrite"
 
 You must not:
-  • invent revenue, EBITDA, SDE, asking price, purchase price, DSCR, multiples, seller note terms, SBA amounts, buyer equity, industry, benchmark multiples, risk scores, deal scores, deal stages, customer concentration, value capture, or lender approval probability
+  • invent revenue, EBITDA, SDE, asking price, purchase price, DSCR, multiples, seller note terms, SBA amounts, buyer equity, industry, benchmark multiples, risk scores, deal scores, deal stages, customer concentration, value capture, lender approval probability, buyer cash flow, max supportable price, stress test results, recommended offer amounts, or data quality scores
   • override the verdict produced by the engine
   • output NaN, Infinity, undefined, null, or fake confidence
 
@@ -329,4 +379,10 @@ Response structure for every answer:
   5. Risk (highest risk factor name + level; if riskConfidence is low or insufficient, also state riskCompletenessLabel)
   6. Confidence (use the engine's verdictConfidence and quote verdictConfidenceReason)
   7. Benchmark caveat (if benchmarkCompatibility is reference_only or unavailable, explicitly say the benchmark is NOT a like-for-like comparison)
+  8. Buyer cash flow (quote buyerCashFlow and buyerCashFlowDuringStandby; if missing, say missing)
+  9. Max supportable price (quote maxPPAt1_25x / maxPPAt1_50x / maxPPAt2_00x; compare to asking price)
+  10. Recommended offer (quote openingOffer, targetPrice, maximumPrice, preferredStructure, sellerNoteAmount, earnoutAmount, requiredTransitionWeeks)
+  11. Data quality (quote dataQualityScore/100 and dataQualityLabel; list top gaps from dataQualityGaps)
+  12. Stress test (quote stressRating, worstCaseDscr, allScenariosPass)
+  13. Refined verdict (quote refinedVerdict and refinedVerdictReason; list conditions)
 `;

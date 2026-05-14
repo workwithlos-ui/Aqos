@@ -568,6 +568,158 @@ export interface RedTeamResult {
 }
 
 // ---------------------------------------------------------------------------
+// BUYER CASH FLOW AFTER DEBT SERVICE
+// ---------------------------------------------------------------------------
+
+export interface BuyerCashFlowResult {
+  earningsUsed: number | null;
+  totalAnnualDebtService: number | null;
+  requiredCapEx: number | null;
+  workingCapitalReserve: number | null;
+  buyerCashFlow: MetricResult;
+  buyerCashFlowDuringStandby: MetricResult;
+  /** Annualized cash-on-cash return on buyer equity invested. */
+  cashOnCashReturn: MetricResult;
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// MAX SUPPORTABLE PURCHASE PRICE
+// ---------------------------------------------------------------------------
+
+export interface MaxSupportablePPResult {
+  /** Max price at which DSCR after standby ≥ 1.25x */
+  at1_25x: number | null;
+  /** Max price at which DSCR after standby ≥ 1.50x */
+  at1_50x: number | null;
+  /** Max price at which DSCR after standby ≥ 2.00x */
+  at2_00x: number | null;
+  /** Current asking / purchase price for comparison */
+  currentPrice: number | null;
+  /** Whether current price is at or below the 1.25x max */
+  priceIsSupported: boolean;
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// STRESS TEST PANEL
+// ---------------------------------------------------------------------------
+
+export interface StressScenario {
+  label: string;
+  description: string;
+  dscrDuringStandby: MetricResult;
+  dscrAfterStandby: MetricResult;
+  earningsUsed: number | null;
+  debtServiceUsed: number | null;
+  pass: boolean;
+  failReason: string | null;
+  buyerCashFlow: number | null;
+}
+
+export interface StressTestResult {
+  scenarios: StressScenario[];
+  worstCaseDscr: number | null;
+  allScenariosPass: boolean;
+  anyScenariosPass: boolean;
+  stressRating: "resilient" | "moderate" | "fragile" | "missing";
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// REFINED VERDICT + BUYER-LANGUAGE REASON
+// ---------------------------------------------------------------------------
+
+export type RefinedVerdict =
+  | "Strong Pursue"
+  | "Pursue with Conditions"
+  | "Renegotiate"
+  | "Freeze"
+  | "Walk Away";
+
+export interface RefinedVerdictResult {
+  verdict: RefinedVerdict;
+  buyerReason: string; // Buyer-language, not finance jargon.
+  conditions: string[]; // What must be true before moving forward.
+  urgency: "high" | "medium" | "low";
+}
+
+// ---------------------------------------------------------------------------
+// RECOMMENDED OFFER
+// ---------------------------------------------------------------------------
+
+export interface RecommendedOfferResult {
+  openingOffer: number | null;
+  targetPrice: number | null;
+  maximumPrice: number | null;
+  preferredStructure: string;
+  sellerNoteAmount: number | null;
+  earnoutAmount: number | null;
+  earnoutTrigger: string | null;
+  requiredTransitionWeeks: number;
+  rationale: string;
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// AUTO-GENERATED DILIGENCE CHECKLIST
+// ---------------------------------------------------------------------------
+
+export type DiligenceItemPriority = "critical" | "important" | "nice-to-have";
+export type DiligenceItemStatus = "received" | "outstanding" | "not-applicable";
+
+export interface DiligenceItem {
+  id: string;
+  category: string;
+  label: string;
+  priority: DiligenceItemPriority;
+  status: DiligenceItemStatus;
+  reason: string; // Why this item matters for this specific deal.
+}
+
+export interface AutoDiligenceResult {
+  items: DiligenceItem[];
+  criticalCount: number;
+  importantCount: number;
+  receivedCount: number;
+  completionPct: number; // 0..100
+  readyForLOI: boolean;
+  readyForLender: boolean;
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// DATA QUALITY SCORE
+// ---------------------------------------------------------------------------
+
+export interface DataQualityResult {
+  score: number; // 0..100
+  label: "High" | "Medium" | "Low" | "Very Low";
+  fieldsProvided: number;
+  fieldsTotal: number;
+  criticalGaps: string[];
+  importantGaps: string[];
+  rationale: string;
+}
+
+// ---------------------------------------------------------------------------
+// ASSUMPTION BADGE
+// ---------------------------------------------------------------------------
+
+export type AssumptionBadgeStatus =
+  | "user-provided"
+  | "engine-calculated"
+  | "assumed"
+  | "missing"
+  | "needs-verification";
+
+export interface AssumptionBadge {
+  field: string;
+  status: AssumptionBadgeStatus;
+  detail: string;
+}
+
+// ---------------------------------------------------------------------------
 // EXISTING DealAnalysis
 // ---------------------------------------------------------------------------
 
@@ -630,4 +782,14 @@ export interface DealAnalysis {
 
   nextActions: string[];
   assumptions: CapitalStackAssumptions;
+
+  // Buyer-grade advisory outputs (Iteration 6).
+  buyerCashFlow: BuyerCashFlowResult;
+  maxSupportablePP: MaxSupportablePPResult;
+  stressTest: StressTestResult;
+  refinedVerdict: RefinedVerdictResult;
+  recommendedOffer: RecommendedOfferResult;
+  autoDiligence: AutoDiligenceResult;
+  dataQuality: DataQualityResult;
+  assumptionBadges: AssumptionBadge[];
 }

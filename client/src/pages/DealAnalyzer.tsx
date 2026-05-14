@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { VerdictPill, DscrPill } from "@/components/acq/Verdict";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Save, Trash2, TrendingDown, CheckCircle2, XCircle, Info } from "lucide-react";
 
 const EMPTY: DealInput = {
   companyName: "",
@@ -505,7 +505,302 @@ export default function DealAnalyzer() {
             </ul>
           </div>
 
-          {/* Verdict + actions + missing data */}
+          {/* ── Buyer Cash Flow ─────────────────────────────────────────── */}
+          <div className="panel p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-lg font-semibold">Buyer cash flow after debt service</h2>
+              <span className="text-[11px] text-muted-foreground">EBITDA − Total Debt Service − CapEx − WC Reserve</span>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+              <Metric label="Earnings used" value={fmtCurrencyExact(analysis.buyerCashFlow.earningsUsed)} />
+              <Metric label="Total annual debt service" value={fmtCurrencyExact(analysis.buyerCashFlow.totalAnnualDebtService)} />
+              <Metric label="Required CapEx" value={fmtCurrencyExact(analysis.buyerCashFlow.requiredCapEx)} />
+              <Metric label="WC reserve" value={fmtCurrencyExact(analysis.buyerCashFlow.workingCapitalReserve)} />
+              <Metric
+                label="Buyer cash flow (after standby)"
+                value={analysis.buyerCashFlow.buyerCashFlow.display}
+                status={analysis.buyerCashFlow.buyerCashFlow.status}
+                formula={analysis.buyerCashFlow.buyerCashFlow.formula}
+              />
+              <Metric
+                label="Buyer cash flow (during standby)"
+                value={analysis.buyerCashFlow.buyerCashFlowDuringStandby.display}
+                status={analysis.buyerCashFlow.buyerCashFlowDuringStandby.status}
+              />
+              <Metric
+                label="Cash-on-cash return"
+                value={analysis.buyerCashFlow.cashOnCashReturn.display}
+                status={analysis.buyerCashFlow.cashOnCashReturn.status}
+              />
+            </div>
+            {analysis.buyerCashFlow.warnings.map((w) => (
+              <div key={w} className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 mt-1">
+                <AlertTriangle className="size-3 mt-0.5" /> {w}
+              </div>
+            ))}
+          </div>
+
+          {/* ── Max Supportable Purchase Price ──────────────────────────── */}
+          <div className="panel p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-lg font-semibold">Max supportable purchase price</h2>
+              <span className={`text-[11px] px-2 py-0.5 rounded font-mono ${
+                analysis.maxSupportablePP.priceIsSupported
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+                  : "bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"
+              }`}>
+                {analysis.maxSupportablePP.priceIsSupported ? "Current price supported" : "Current price NOT supported"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+              <Metric label="At 1.25x DSCR" value={fmtCurrencyExact(analysis.maxSupportablePP.at1_25x)} />
+              <Metric label="At 1.50x DSCR" value={fmtCurrencyExact(analysis.maxSupportablePP.at1_50x)} />
+              <Metric label="At 2.00x DSCR" value={fmtCurrencyExact(analysis.maxSupportablePP.at2_00x)} />
+              <Metric label="Current price" value={fmtCurrencyExact(analysis.maxSupportablePP.currentPrice)} />
+            </div>
+            {analysis.maxSupportablePP.warnings.map((w) => (
+              <div key={w} className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 mt-1">
+                <AlertTriangle className="size-3 mt-0.5" /> {w}
+              </div>
+            ))}
+          </div>
+
+          {/* ── Stress Test Panel ────────────────────────────────────────── */}
+          <div className="panel p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-lg font-semibold">Stress test panel</h2>
+              <div className="flex items-center gap-2">
+                <span className={`text-[11px] px-2 py-0.5 rounded font-mono ${
+                  analysis.stressTest.stressRating === "resilient" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
+                  : analysis.stressTest.stressRating === "moderate" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                  : analysis.stressTest.stressRating === "fragile" ? "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
+                  : "bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"
+                }`}>
+                  {analysis.stressTest.stressRating === "missing" ? "Stress: missing earnings" : `Stress: ${analysis.stressTest.stressRating}`}
+                </span>
+              </div>
+            </div>
+            {analysis.stressTest.scenarios.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Earnings or price missing — stress tests cannot run.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                      <th className="text-left py-2">Scenario</th>
+                      <th className="text-right py-2">DSCR during</th>
+                      <th className="text-right py-2">DSCR after</th>
+                      <th className="text-right py-2">Pass (1.25x)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analysis.stressTest.scenarios.map((s) => (
+                      <tr key={s.label} className="border-b border-border/60 last:border-0">
+                        <td className="py-2 font-medium">{s.label}</td>
+                        <td className="text-right font-mono">{s.dscrDuringStandby.display}</td>
+                        <td className="text-right font-mono">{s.dscrAfterStandby.display}</td>
+                        <td className="text-right">
+                          {s.pass
+                            ? <CheckCircle2 className="size-4 text-emerald-600 ml-auto" />
+                            : <XCircle className="size-4 text-rose-600 ml-auto" />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  Worst-case DSCR: {analysis.stressTest.worstCaseDscr === null ? "missing" : analysis.stressTest.worstCaseDscr.toFixed(2) + "x"}
+                  {" · "}{analysis.stressTest.allScenariosPass ? "All scenarios pass" : analysis.stressTest.anyScenariosPass ? "Some scenarios pass" : "All scenarios fail"}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Refined Verdict + Recommended Offer ─────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="panel p-6">
+              <h2 className="font-display text-lg font-semibold mb-3">Deal verdict</h2>
+              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold mb-3 ${
+                analysis.refinedVerdict.verdict === "Strong Pursue"
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  : analysis.refinedVerdict.verdict === "Pursue with Conditions"
+                    ? "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
+                    : analysis.refinedVerdict.verdict === "Renegotiate"
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                      : analysis.refinedVerdict.verdict === "Freeze"
+                        ? "bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300"
+                        : "bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
+              }`}>
+                <TrendingDown className="size-4" />
+                {analysis.refinedVerdict.verdict}
+              </div>
+              <p className="text-sm leading-relaxed mb-3">{analysis.refinedVerdict.buyerReason}</p>
+              {analysis.refinedVerdict.conditions.length > 0 && (
+                <div>
+                  <div className="metric-label mb-1">Conditions</div>
+                  <ul className="list-disc pl-5 text-xs space-y-0.5">
+                    {analysis.refinedVerdict.conditions.map((c) => <li key={c}>{c}</li>)}
+                  </ul>
+                </div>
+              )}
+              <div className="mt-3 text-xs text-muted-foreground">Urgency: <span className="font-semibold">{analysis.refinedVerdict.urgency}</span></div>
+            </div>
+            <div className="panel p-6">
+              <h2 className="font-display text-lg font-semibold mb-3">Recommended offer</h2>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <Metric label="Opening offer" value={fmtCurrencyExact(analysis.recommendedOffer.openingOffer)} />
+                <Metric label="Target price" value={fmtCurrencyExact(analysis.recommendedOffer.targetPrice)} />
+                <Metric label="Maximum price" value={fmtCurrencyExact(analysis.recommendedOffer.maximumPrice)} />
+                <Metric label="Seller note" value={fmtCurrencyExact(analysis.recommendedOffer.sellerNoteAmount)} />
+                {analysis.recommendedOffer.earnoutAmount !== null && (
+                  <Metric label="Earnout" value={fmtCurrencyExact(analysis.recommendedOffer.earnoutAmount)} />
+                )}
+                <Metric label="Transition period" value={`${analysis.recommendedOffer.requiredTransitionWeeks} weeks`} />
+              </div>
+              <div className="text-xs text-muted-foreground mb-2">
+                <span className="font-semibold">Structure:</span> {analysis.recommendedOffer.preferredStructure}
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">{analysis.recommendedOffer.rationale}</p>
+              {analysis.recommendedOffer.warnings.map((w) => (
+                <div key={w} className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 mt-1">
+                  <AlertTriangle className="size-3 mt-0.5" /> {w}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Auto-generated Diligence Checklist ──────────────────────── */}
+          <div className="panel p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display text-lg font-semibold">Auto-generated diligence checklist</h2>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span>{analysis.autoDiligence.completionPct}% complete</span>
+                <span className={`px-2 py-0.5 rounded font-mono ${
+                  analysis.autoDiligence.readyForLOI ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                }`}>{analysis.autoDiligence.readyForLOI ? "LOI ready" : "Not LOI ready"}</span>
+                <span className={`px-2 py-0.5 rounded font-mono ${
+                  analysis.autoDiligence.readyForLender ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                }`}>{analysis.autoDiligence.readyForLender ? "Lender ready" : "Not lender ready"}</span>
+              </div>
+            </div>
+            {analysis.autoDiligence.items.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No diligence items generated — add industry and deal data.</div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                {analysis.autoDiligence.items.map((item) => (
+                  <div key={item.id} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+                    item.status === "received"
+                      ? "border-emerald-300/60 bg-emerald-50/40 dark:bg-emerald-950/20"
+                      : item.priority === "critical"
+                        ? "border-rose-300/60 bg-rose-50/40 dark:bg-rose-950/20"
+                        : item.priority === "important"
+                          ? "border-amber-300/60 bg-amber-50/40 dark:bg-amber-950/20"
+                          : "border-border bg-background/60"
+                  }`}>
+                    <span className={`mt-0.5 size-2 rounded-full flex-shrink-0 ${
+                      item.status === "received" ? "bg-emerald-500"
+                      : item.priority === "critical" ? "bg-rose-500"
+                      : item.priority === "important" ? "bg-amber-500"
+                      : "bg-slate-400"
+                    }`} />
+                    <div className="flex-1">
+                      <div className="font-medium">{item.label}</div>
+                      <div className="text-muted-foreground">{item.reason}</div>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{item.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Data Quality Score + Assumption Badges ──────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="panel p-6">
+              <h2 className="font-display text-lg font-semibold mb-3">Data quality score</h2>
+              <div className="flex items-baseline gap-3 mb-2">
+                <div className="font-display text-4xl font-semibold">{analysis.dataQuality.score}</div>
+                <div className="text-sm text-muted-foreground">/ 100 · {analysis.dataQuality.label}</div>
+              </div>
+              <div className="w-full h-2 rounded-full bg-muted overflow-hidden mb-3">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    analysis.dataQuality.score >= 80 ? "bg-emerald-500"
+                    : analysis.dataQuality.score >= 60 ? "bg-amber-500"
+                    : analysis.dataQuality.score >= 40 ? "bg-orange-500"
+                    : "bg-rose-500"
+                  }`}
+                  style={{ width: `${analysis.dataQuality.score}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">{analysis.dataQuality.rationale}</p>
+              {analysis.dataQuality.criticalGaps.length > 0 && (
+                <div className="mb-2">
+                  <div className="metric-label mb-1">Critical gaps</div>
+                  <ul className="list-disc pl-4 text-xs space-y-0.5">
+                    {analysis.dataQuality.criticalGaps.map((g) => <li key={g} className="text-rose-700 dark:text-rose-400">{g}</li>)}
+                  </ul>
+                </div>
+              )}
+              {analysis.dataQuality.importantGaps.length > 0 && (
+                <div>
+                  <div className="metric-label mb-1">Important gaps</div>
+                  <ul className="list-disc pl-4 text-xs space-y-0.5">
+                    {analysis.dataQuality.importantGaps.map((g) => <li key={g} className="text-amber-700 dark:text-amber-400">{g}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <div className="panel p-6">
+              <div className="flex items-center gap-2 mb-3">
+                <h2 className="font-display text-lg font-semibold">Assumption badges</h2>
+                <span title="Every output is tagged with its data source.">
+                  <Info className="size-4 text-muted-foreground" />
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">Each output is tagged: user-provided, engine-calculated, assumed, missing, or needs-verification.</p>
+              <div className="flex flex-wrap gap-2">
+                {analysis.assumptionBadges.map((b) => (
+                  <div
+                    key={b.field}
+                    title={b.detail ?? b.field}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                      b.status === "user-provided" ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
+                      : b.status === "engine-calculated" ? "border-blue-300/60 bg-blue-50 text-blue-800 dark:bg-blue-950/30 dark:text-blue-300"
+                      : b.status === "assumed" ? "border-amber-300/60 bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                      : b.status === "missing" ? "border-rose-300/60 bg-rose-50 text-rose-800 dark:bg-rose-950/30 dark:text-rose-300"
+                      : "border-slate-300/60 bg-slate-50 text-slate-700 dark:bg-slate-950/30 dark:text-slate-300"
+                    }`}
+                  >
+                    <span className={`size-1.5 rounded-full ${
+                      b.status === "user-provided" ? "bg-emerald-500"
+                      : b.status === "engine-calculated" ? "bg-blue-500"
+                      : b.status === "assumed" ? "bg-amber-500"
+                      : b.status === "missing" ? "bg-rose-500"
+                      : "bg-slate-400"
+                    }`} />
+                    {b.field}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                {(["user-provided", "engine-calculated", "assumed", "missing", "needs-verification"] as const).map((s) => (
+                  <span key={s} className="flex items-center gap-1">
+                    <span className={`size-1.5 rounded-full ${
+                      s === "user-provided" ? "bg-emerald-500"
+                      : s === "engine-calculated" ? "bg-blue-500"
+                      : s === "assumed" ? "bg-amber-500"
+                      : s === "missing" ? "bg-rose-500"
+                      : "bg-slate-400"
+                    }`} />
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Verdict + actions + missing data ────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="panel p-6">
               <h2 className="font-display text-lg font-semibold mb-3">Verdict</h2>

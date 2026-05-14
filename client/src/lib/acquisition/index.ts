@@ -25,6 +25,16 @@ import { scoreThesisFit, DEFAULT_BUY_BOX } from "./thesis";
 import { scoreWorkingCapital } from "./workingCapital";
 import { scoreIntegration } from "./integration";
 import { computeGovernance, computeDealFreeze, computeRedTeam } from "./governance";
+import {
+  computeBuyerCashFlow,
+  computeMaxSupportablePP,
+  computeStressTest,
+  computeRefinedVerdict,
+  computeRecommendedOffer,
+  computeAutoDiligence,
+  computeDataQuality,
+  computeAssumptionBadges,
+} from "./buyerAdvisory";
 import type {
   BuyBox,
   CapitalStackAssumptions,
@@ -276,6 +286,21 @@ export function analyzeDeal(
     redTeam: { objections: [], topObjections: [], unresolvedCriticalCount: 0, rationale: "" },
     nextActions: [],
     assumptions,
+    // Buyer-grade advisory fields — populated after full analysis.
+    buyerCashFlow: {
+      earningsUsed: null, totalAnnualDebtService: null, requiredCapEx: null, workingCapitalReserve: null,
+      buyerCashFlow: { value: null, display: "pending", status: "missing", formula: "", inputs: {} },
+      buyerCashFlowDuringStandby: { value: null, display: "pending", status: "missing", formula: "", inputs: {} },
+      cashOnCashReturn: { value: null, display: "pending", status: "missing", formula: "", inputs: {} },
+      warnings: [],
+    },
+    maxSupportablePP: { at1_25x: null, at1_50x: null, at2_00x: null, currentPrice: null, priceIsSupported: false, warnings: [] },
+    stressTest: { scenarios: [], worstCaseDscr: null, allScenariosPass: false, anyScenariosPass: false, stressRating: "missing", warnings: [] },
+    refinedVerdict: { verdict: "Pursue with Conditions", buyerReason: "", conditions: [], urgency: "medium" },
+    recommendedOffer: { openingOffer: null, targetPrice: null, maximumPrice: null, preferredStructure: "", sellerNoteAmount: null, earnoutAmount: null, earnoutTrigger: null, requiredTransitionWeeks: 12, rationale: "", warnings: [] },
+    autoDiligence: { items: [], criticalCount: 0, importantCount: 0, receivedCount: 0, completionPct: 0, readyForLOI: false, readyForLender: false, warnings: [] },
+    dataQuality: { score: 0, label: "Very Low", fieldsProvided: 0, fieldsTotal: 0, criticalGaps: [], importantGaps: [], rationale: "" },
+    assumptionBadges: [],
   };
 
   const scoreResult = scoreDeal({ input, analysis: partial });
@@ -313,6 +338,17 @@ export function analyzeDeal(
   partial.score.bucket = finalBucket; // keep legacy field in lockstep
 
   partial.nextActions = nextActionsFor(partial);
+
+  // ── Buyer-grade advisory modules (Iteration 6) ──────────────────────────
+  partial.buyerCashFlow = computeBuyerCashFlow(partial);
+  partial.maxSupportablePP = computeMaxSupportablePP(input, partial);
+  partial.stressTest = computeStressTest(input, partial);
+  partial.refinedVerdict = computeRefinedVerdict(partial);
+  partial.recommendedOffer = computeRecommendedOffer(partial);
+  partial.autoDiligence = computeAutoDiligence(input, partial);
+  partial.dataQuality = computeDataQuality(input, partial);
+  partial.assumptionBadges = computeAssumptionBadges(input, partial);
+
   return partial;
 }
 
