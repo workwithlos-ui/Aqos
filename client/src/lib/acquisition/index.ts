@@ -312,8 +312,11 @@ export function analyzeDeal(
   partial.verdict = verdict;
   partial.scoreLabel = verdict.isPreliminary ? "Preliminary Score" : "Score";
 
-  // Compute institutional M&A modules
+  // Compute institutional M&A modules.  Anomalies must be computed FIRST
+  // because Red Team and IC memo subscribe to `partial.anomalies` via the
+  // AnomalyBus pattern.
   partial.freeze = computeDealFreeze(partial);
+  partial.anomalies = computeAnomalies(input, partial);
   partial.redTeam = computeRedTeam(partial);
   partial.governance = computeGovernance(partial);
 
@@ -339,6 +342,30 @@ export function analyzeDeal(
   partial.finalBucketReason = finalBucketReason;
   partial.score.bucket = finalBucket; // keep legacy field in lockstep
 
+  // P0 ship-blocker 3.4 — invalid capital stack short-circuits to Cannot
+  // Underwrite *and* blanks the score / DSCR so the UI cannot pretend the
+  // deal underwrites.  Test 10 (capital stack = 105%) relies on this.
+  if (!partial.capitalStack.pctValid) {
+    partial.score = {
+      ...partial.score,
+      status: "review_required",
+      score: 0,
+      blockerReason: `Capital stack reconciles to ${(partial.capitalStack.pctTotal * 100).toFixed(2)}%, must equal 100%.`,
+    };
+    const blanked = {
+      value: null,
+      display: "—",
+      status: "missing" as const,
+      formula: "DSCR suppressed — capital stack is invalid.",
+      inputs: {},
+    };
+    partial.dscr = blanked;
+    partial.dscrPair = {
+      duringStandby: blanked,
+      afterStandby: blanked,
+    };
+  }
+
   partial.nextActions = nextActionsFor(partial);
 
   // ── Buyer-grade advisory modules (Iteration 6) ──────────────────────────
@@ -350,7 +377,11 @@ export function analyzeDeal(
   partial.autoDiligence = computeAutoDiligence(input, partial);
   partial.dataQuality = computeDataQuality(input, partial);
   partial.assumptionBadges = computeAssumptionBadges(input, partial);
+  // Recompute anomalies after all downstream modules so any newly populated
+  // fields (maxSupportablePP, refinedVerdict, etc.) feed the bus on this pass.
   partial.anomalies = computeAnomalies(input, partial);
+  // Re-derive Red Team objections using the final anomaly set.
+  partial.redTeam = computeRedTeam(partial);
 
   return partial;
 }

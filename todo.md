@@ -1,21 +1,36 @@
-# Acquisition OS — Iteration 5: ProFlow Contradiction Fix
+# Iteration 8 — Critical Brief (AnomalyBus + Imputation Discipline + 6 P0 + WC bug)
 
-## Repro
-ProFlow Plumbing — Plumbing, Rev $3.2M, EBITDA $950K, SDE $1.05M, Asking $3.2M.
-Observed:
-- score label: "80/100 · Acquisition Priority"
-- verdict card: "Diligence Priority"
-- risk 15/20 with 4 major fields missing
-- diligence 0/10
-- 10 important missing
+## Architectural
+- [ ] AnomalyBus: single `analysis.anomalies` array consumed by:
+  - [ ] Analyzer page yellow banner under headline verdict
+  - [ ] Red Team objections (no generic placeholders when anomalies exist)
+  - [ ] IC memo Executive Summary first paragraph
+  - [ ] Exports header
+  - [ ] Governance gates
+  - [ ] Copilot (already works — keep)
 
-## Tasks
-- [ ] 1. Single bucket: verdict bucket drives the score-card label.
-- [ ] 2. Caps: diligence 0/10 → max Diligence Priority; importantMissing > 5 → max Diligence Priority; criticalMissing > 0 → Cannot Underwrite or Diligence Priority; LOI not ready → cannot be Acquisition Priority.
-- [ ] 3. Risk: 3+/5 missing → risk earned heavily discounted, riskConfidence = low, scoreLabel = Preliminary.
-- [ ] 4. With diligence 0/10 + risk incomplete → final score in 65–72 band, not 80.
-- [ ] 5. Acquisition Priority gate: DSCR.afterStandby ≥ 1.40x AND no critical missing AND importantMissing ≤ 5 AND diligence ≥ 3 AND risk materially complete AND no unresolved blockers AND LOI ready/near-ready AND core math works.
-- [ ] 6. Blockers (revenueTrend, customerConcentration, ownerRole missing) cap bucket regardless of score.
-- [ ] 7. Pipeline / Dashboard / Analyzer / Copilot all read the same bucket.
-- [ ] 8. Regression tests for ProFlow + each acceptance rule.
-- [ ] 9. Redeploy to Manus public; push to GitHub workwithlos-ui/Aqos.
+## Imputation discipline (industry-time, not page-time)
+- [ ] On industry selection, if capEx null → revenue × industryTable[industry].capexPct
+- [ ] On industry selection, if WC reserve null → revenue × industryTable[industry].wcPct
+- [ ] Tag both with assumption badge "assumed (industry default)"
+- [ ] Inline override link with current default %
+- [ ] HVAC defaults: capexPct 0.025, wcPct 0.07
+
+## P0 ship-blockers
+- [ ] 3.1 Asking-below-benchmark YELLOW BANNER on /analyze
+- [ ] 3.2 EBITDA margin anomaly + badge "needs-verification"
+- [ ] 3.3 Risk panel copy: "5 of 5 engine-inferred · 0 of 5 buyer-confirmed"
+- [ ] 3.4 Invalid capital stack → CANNOT UNDERWRITE with null score/DSCR
+- [ ] 3.5 Red Team objections consume anomalies array
+- [ ] 3.6 SaveStatus: "Saving…" → "Saved" → "Saved · Xs ago" within 500ms
+
+## Bug fix
+- [ ] WC peg formatter: render $175,000, not $7
+
+## Verification protocol
+- [ ] UI regression tests for each fix (DealAnalyzer renders the anomaly)
+- [ ] Live smoke test paste on deployed URL
+- [ ] Hash receipt (deployed vs GitHub)
+- [ ] Per-item file + line pointers
+- [ ] Honest delta
+- [ ] All 10 binary acceptance criteria

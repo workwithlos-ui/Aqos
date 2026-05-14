@@ -14,6 +14,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { VerdictPill, DscrPill } from "@/components/acq/Verdict";
+import { AnomalyBannerStack } from "@/components/acq/AnomalyBanner";
+import { SaveStatus, type SaveStatusState } from "@/components/acq/SaveStatus";
+import { getIndustryDefault } from "@/lib/acquisition/industryDefaults";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, Save, Trash2, TrendingDown, CheckCircle2, XCircle, Info } from "lucide-react";
 
@@ -73,9 +76,43 @@ export default function DealAnalyzer() {
 
   const analysis = useMemo(() => analyzeDeal(form, assumptions), [form, assumptions]);
 
+  // P0 ship-blocker 3.6 — save status indicator. Transitions:
+  //   idle  → (Save clicked) saving → saved → idle.
+  // "saving" must be visible within 500ms of click; "saved" sticks for 3s
+  // then collapses to a muted "Saved · Xs ago" label that auto-increments.
+  const [saveState, setSaveState] = useState<SaveStatusState>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+
   function update<K extends keyof DealInput>(key: K, value: DealInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  // P0 architectural rule — industry-time imputation. The moment the buyer
+  // selects (or changes) the industry, both CapEx and WC reserve are filled
+  // in from the industry-default table when the buyer has not entered an
+  // explicit value. Both are tagged "assumed (industry default)" via the
+  // assumption-badge panel below, so the buyer can override at any time.
+  useEffect(() => {
+    const def = getIndustryDefault(form.industry);
+    if (!def || !form.annualRevenue) return;
+    const wc = form.workingCapital ?? {};
+    const needsCapEx =
+      wc.capExNeedsAnnual === null || wc.capExNeedsAnnual === undefined;
+    const needsWcPeg =
+      wc.workingCapitalPeg === null || wc.workingCapitalPeg === undefined;
+    if (!needsCapEx && !needsWcPeg) return;
+    setForm((f) => ({
+      ...f,
+      workingCapital: {
+        ...wc,
+        ...(needsCapEx
+          ? { capExNeedsAnnual: Math.round(form.annualRevenue! * def.capExPct) }
+          : {}),
+        ...(needsWcPeg ? { workingCapitalPeg: def.wcPct * 100 } : {}),
+      },
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.industry, form.annualRevenue]);
 
   function updateDiligence(key: keyof NonNullable<DealInput["diligence"]>, value: boolean) {
     setForm((f) => ({ ...f, diligence: { ...f.diligence, [key]: value } }));
@@ -86,9 +123,18 @@ export default function DealAnalyzer() {
       toast.error("Company name is required");
       return;
     }
-    const id = form.id ?? `deal-${Date.now()}`;
-    upsertDeal({ ...form, id, updatedAt: new Date().toISOString(), createdAt: form.createdAt ?? new Date().toISOString() });
-    toast.success(`${form.companyName} saved`);
+    setSaveState("saving");
+    // Force the user-visible state change within 500ms by performing the
+    // upsert on the next microtask and flipping to "saved".  The store is
+    // synchronous, so the upsert completes well within budget.
+    setTimeout(() => {
+      const id = form.id ?? `deal-${Date.now()}`;
+      upsertDeal({ ...form, id, updatedAt: new Date().toISOString(), createdAt: form.createdAt ?? new Date().toISOString() });
+      setLastSavedAt(Date.now());
+      setSaveState("saved");
+      toast.success(`${form.companyName} saved`, { duration: 1500 });
+      setTimeout(() => setSaveState("idle"), 3000);
+    }, 50);
   }
 
   return (
@@ -120,6 +166,7 @@ export default function DealAnalyzer() {
             }`}>
               Confidence: {analysis.verdict.confidence}
             </span>
+            <SaveStatus state={saveState} lastSavedAt={lastSavedAt} />
           </div>
         </div>
         <div className="flex gap-2">
@@ -137,9 +184,17 @@ export default function DealAnalyzer() {
               <Trash2 className="size-4 mr-1.5" /> Delete
             </Button>
           )}
-          <Button onClick={save}><Save className="size-4 mr-1.5" /> Save deal</Button>
+          <Button onClick={save} disabled={saveState === "saving"} data-testid="save-deal-btn">
+            <Save className="size-4 mr-1.5" /> {saveState === "saving" ? "Saving…" : "Save deal"}
+          </Button>
         </div>
       </header>
+
+      {/* AnomalyBus — single source of engine-detected anomalies, rendered
+          directly under the headline verdict.  The Red Team page, IC memo,
+          Exports header, Copilot, and Governance gates all subscribe to the
+          same `analysis.anomalies` array. */}
+      <AnomalyBannerStack anomalies={analysis.anomalies} />
 
       {/* Input form */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -503,7 +558,24 @@ export default function DealAnalyzer() {
                   Risk confidence: {analysis.risk.riskConfidence}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground mb-3">{analysis.risk.riskCompletenessLabel}</p>
+              {(() => {
+                const total = analysis.risk.totalFactors;
+                const inferred = analysis.risk.factors.filter((f) => f.score !== null).length;
+                const confirmed = analysis.risk.factors.filter((f) => f.source === "actual").length;
+                return (
+                  <p
+                    className="text-xs text-muted-foreground mb-3"
+                    data-testid="risk-panel-completeness"
+                  >
+                    <span className="font-mono text-foreground">
+                      {inferred} of {total} engine-inferred · {confirmed} of {total} buyer-confirmed
+                    </span>
+                    <span className="ml-2">
+                      Confirm each factor to grow the Risk score from {confirmed * 4}/20 toward 20/20.
+                    </span>
+                  </p>
+                );
+              })()}
               <ul className="flex flex-col gap-2">
                 {analysis.risk.factors.map((f) => (
                   <li key={f.key} className="flex items-start justify-between gap-3 border-b border-border/60 last:border-0 pb-2 last:pb-0">

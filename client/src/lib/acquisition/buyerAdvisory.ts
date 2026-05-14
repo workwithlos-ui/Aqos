@@ -24,7 +24,9 @@ import {
   fmtPct,
   selectPurchasePrice,
   selectEarnings,
+  fmtCurrencyExact,
 } from "./dealMath";
+import { getIndustryDefault } from "./industryDefaults";
 import type {
   DealAnalysis,
   DealInput,
@@ -887,6 +889,40 @@ export function computeAssumptionBadges(
     detail: `${(a.assumptions.sbaLoanPct * 100).toFixed(0)}% SBA / ${(a.assumptions.sellerNotePct * 100).toFixed(0)}% Seller Note / ${(a.assumptions.buyerEquityPct * 100).toFixed(0)}% Equity — engine default.`,
   });
 
+  // CapEx + WC reserve badges — reflect industry-time imputation.
+  const wcInput = input.workingCapital ?? {};
+  const indDef = getIndustryDefault(input.industry);
+  const capExUser =
+    typeof wcInput.capExNeedsAnnual === "number" && Number.isFinite(wcInput.capExNeedsAnnual) && wcInput.capExNeedsAnnual > 0;
+  badges.push({
+    field: "CapEx (annual)",
+    status: capExUser
+      ? "user-provided"
+      : indDef && input.annualRevenue
+        ? "assumed"
+        : "missing",
+    detail: capExUser
+      ? `${fmtCurrencyExact(wcInput.capExNeedsAnnual!)} — entered by user.`
+      : indDef && input.annualRevenue
+        ? `${fmtCurrencyExact(Math.round(input.annualRevenue * indDef.capExPct))} — assumed (industry default: ${(indDef.capExPct * 100).toFixed(1)}% of revenue).`
+        : "CapEx not provided and no industry default available.",
+  });
+  const wcPegUser =
+    typeof wcInput.workingCapitalPeg === "number" && Number.isFinite(wcInput.workingCapitalPeg) && wcInput.workingCapitalPeg > 0;
+  badges.push({
+    field: "WC Reserve",
+    status: wcPegUser
+      ? "user-provided"
+      : indDef && input.annualRevenue
+        ? "assumed"
+        : "missing",
+    detail: wcPegUser && input.annualRevenue
+      ? `${fmtCurrencyExact(Math.round(input.annualRevenue * (wcInput.workingCapitalPeg! / 100)))} — ${wcInput.workingCapitalPeg}% of revenue (user override).`
+      : indDef && input.annualRevenue
+        ? `${fmtCurrencyExact(Math.round(input.annualRevenue * indDef.wcPct))} — assumed (industry default: ${(indDef.wcPct * 100).toFixed(0)}% of revenue).`
+        : "WC peg not provided and no industry default available.",
+  });
+
   function metricStatusToBadge(s: string): import('./types').AssumptionBadgeStatus {
     if (s === 'actual') return 'engine-calculated';
     if (s === 'assumed' || s === 'estimated') return 'assumed';
@@ -894,12 +930,28 @@ export function computeAssumptionBadges(
     return 'needs-verification';
   }
 
+  // EBITDA Margin badge.  When the computed margin is above the industry
+  // high by more than 10% (anomaly threshold), promote the badge from
+  // "engine-calculated" to "needs-verification" so the buyer is forced to
+  // confirm owner W-2 add-back, CapEx run-rate, related-party transactions,
+  // and one-time revenue events before relying on it.
+  const marginNorm = input.industry
+    ? INDUSTRY_NORMAL_MARGINS[input.industry.toLowerCase().trim()] ?? null
+    : null;
+  const marginNeedsCheck =
+    a.ebitdaMargin.value !== null &&
+    marginNorm !== null &&
+    a.ebitdaMargin.value > marginNorm.max * INDUSTRY_MARGIN_ANOMALY_MULTIPLE;
   badges.push({
     field: "EBITDA Margin",
-    status: metricStatusToBadge(a.ebitdaMargin.status),
+    status: marginNeedsCheck
+      ? "needs-verification"
+      : metricStatusToBadge(a.ebitdaMargin.status),
     detail:
       a.ebitdaMargin.value !== null
-        ? `${fmtPct(a.ebitdaMargin.value)} — engine-calculated from user inputs.`
+        ? marginNeedsCheck && marginNorm
+          ? `${fmtPct(a.ebitdaMargin.value)} is above ${input.industry} industry high of ${fmtPct(marginNorm.max)}. Verify W-2 add-back, CapEx run-rate, related-party transactions, one-time revenue.`
+          : `${fmtPct(a.ebitdaMargin.value)} — engine-calculated from user inputs.`
         : "Cannot calculate — revenue or EBITDA missing.",
   });
 
@@ -959,18 +1011,39 @@ export function computeAssumptionBadges(
 // Pulled out so Copilot's "Challenge my assumptions" and the Red Team page can
 // share the same deterministic objection list.
 
-const INDUSTRY_NORMAL_MARGINS: Record<string, { min: number; max: number }> = {
-  hvac: { min: 0.1, max: 0.2 },
-  plumbing: { min: 0.12, max: 0.22 },
-  electrical: { min: 0.1, max: 0.2 },
-  landscaping: { min: 0.08, max: 0.18 },
-  roofing: { min: 0.12, max: 0.22 },
-  restaurant: { min: 0.06, max: 0.15 },
-  "it services": { min: 0.12, max: 0.25 },
-  saas: { min: 0.15, max: 0.4 },
-  ecommerce: { min: 0.05, max: 0.15 },
-  manufacturing: { min: 0.08, max: 0.18 },
+// Industry EBITDA margin norms.  Anomaly fires when reported margin is more
+// than 10% ABOVE the high of the band (i.e., margin > high * 1.10) so the
+// buyer is forced to verify owner add-backs, capex run-rate, related-party
+// transactions and one-time revenue events before relying on the multiple.
+const INDUSTRY_NORMAL_MARGINS: Record<string, { min: number; median: number; max: number }> = {
+  hvac: { min: 0.08, median: 0.115, max: 0.15 },
+  plumbing: { min: 0.1, median: 0.15, max: 0.2 },
+  electrical: { min: 0.08, median: 0.13, max: 0.18 },
+  landscaping: { min: 0.07, median: 0.12, max: 0.17 },
+  roofing: { min: 0.1, median: 0.15, max: 0.2 },
+  restaurant: { min: 0.06, median: 0.1, max: 0.15 },
+  "it services": { min: 0.12, median: 0.18, max: 0.25 },
+  saas: { min: 0.15, median: 0.25, max: 0.4 },
+  ecommerce: { min: 0.05, median: 0.1, max: 0.15 },
+  manufacturing: { min: 0.08, median: 0.13, max: 0.18 },
 };
+
+const INDUSTRY_MARGIN_ANOMALY_MULTIPLE = 1.1;
+
+export function getIndustryMarginNorm(industry: string | null | undefined) {
+  if (!industry) return null;
+  return INDUSTRY_NORMAL_MARGINS[industry.toLowerCase().trim()] ?? null;
+}
+
+export function marginNeedsVerification(
+  industry: string | null | undefined,
+  margin: number | null | undefined,
+): boolean {
+  if (margin == null) return false;
+  const norm = getIndustryMarginNorm(industry);
+  if (!norm) return false;
+  return margin > norm.max * INDUSTRY_MARGIN_ANOMALY_MULTIPLE;
+}
 
 export function computeAnomalies(
   input: DealInput,
@@ -987,11 +1060,14 @@ export function computeAnomalies(
     a.valuation.compatibility !== "reference_only" &&
     askingOrPP < a.valuation.benchmarkLowValue
   ) {
+    const askPct = a.valuation.benchmarkLowValue! > 0
+      ? (1 - askingOrPP / a.valuation.benchmarkLowValue!) * 100
+      : 0;
     anomalies.push({
       id: "asking-below-benchmark-low",
       severity: "watch",
       title: "Asking is below industry benchmark low",
-      detail: `${fmtCurrency(askingOrPP)} sits below the industry benchmark low of ${fmtCurrency(a.valuation.benchmarkLowValue)}. This usually signals one of: (a) hidden problems the seller is trying to move quickly, (b) earnings are inflated and a normalized re-cast will lift the multiple back into range, (c) genuine motivated seller. Verify before celebrating.`,
+      detail: `Asking ${fmtCurrency(askingOrPP)} is ${askPct.toFixed(1)}% below the ${input.industry ?? "industry"} benchmark low of ${fmtCurrency(a.valuation.benchmarkLowValue)} — verify motivation, normalize earnings, or flag for hidden defects. Possible causes: hidden customer concentration, owner-as-key-person, deferred CapEx, or the EBITDA being SDE in disguise.`,
       diligenceTriggers: [
         "Ask the broker why the price is below the comp range",
         "Run normalized add-back review with QoE professional",
@@ -1004,16 +1080,17 @@ export function computeAnomalies(
   // ── 2. Margin above industry norm ─────────────────────────────────────────
   if (a.ebitdaMargin.value !== null && input.industry) {
     const norm = INDUSTRY_NORMAL_MARGINS[input.industry.toLowerCase().trim()];
-    if (norm && a.ebitdaMargin.value > norm.max) {
+    if (norm && a.ebitdaMargin.value > norm.max * INDUSTRY_MARGIN_ANOMALY_MULTIPLE) {
       anomalies.push({
         id: "margin-above-industry-norm",
         severity: "watch",
-        title: "EBITDA margin is above industry norm",
-        detail: `Reported EBITDA margin of ${fmtPct(a.ebitdaMargin.value)} exceeds the typical ${input.industry} range of ${fmtPct(norm.min)}–${fmtPct(norm.max)}. Verify add-back legitimacy before relying on this margin.`,
+        title: "EBITDA margin above industry norm",
+        detail: `Computed EBITDA margin (${fmtPct(a.ebitdaMargin.value)}) is above the ${input.industry} industry high (${fmtPct(norm.max)}). Verify with: (1) owner W-2 add-back, (2) capex run-rate vs depreciation, (3) related-party transactions, (4) one-time revenue events.`,
         diligenceTriggers: [
           "Itemize add-backs line by line — flag any owner-personal or one-time items",
           "Tie EBITDA back to tax returns",
           "Confirm gross margin and labor cost lines are consistent with industry",
+          "Confirm CapEx run-rate matches depreciation — deferred CapEx inflates EBITDA",
         ],
       });
     }

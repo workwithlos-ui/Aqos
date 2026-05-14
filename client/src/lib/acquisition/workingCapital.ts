@@ -1,5 +1,23 @@
-import type { DealInput, WorkingCapitalInputs, WorkingCapitalResult } from "./types";
+import type {
+  DealInput,
+  WorkingCapitalResult,
+} from "./types";
+import { imputeWorkingCapitalDefaults, getIndustryDefault } from "./industryDefaults";
 
+/**
+ * Score the working capital inputs against the deal context.
+ *
+ * Critical contract: `workingCapital.workingCapitalPeg` is a **percentage**
+ * (e.g. 7 means 7% of annual revenue). The engine multiplies that percentage
+ * by annual revenue to produce a dollar peg. Earlier versions treated it as a
+ * dollar amount, which caused the `$7` rendering bug on the Live Engine Output
+ * panel.
+ *
+ * CapEx and WC reserve defaults are imputed industry-time (driven by
+ * `industryDefaults.ts`) the moment the buyer selects an industry on the
+ * Analyzer — this function uses the same defaults as the fallback when the
+ * buyer has not entered explicit values yet.
+ */
 export function scoreWorkingCapital(input: DealInput): WorkingCapitalResult {
   const wc = input.workingCapital ?? {};
 
@@ -14,9 +32,12 @@ export function scoreWorkingCapital(input: DealInput): WorkingCapitalResult {
   const dio = wc.dio ?? null;
   const arOver90 = wc.arOver90Pct ?? null;
   const invOver90 = wc.inventoryOver90Pct ?? null;
-  const wcPeg = wc.workingCapitalPeg ?? null;
+  // workingCapitalPeg is a PERCENTAGE of annual revenue (e.g. 7 means 7%).
+  const wcPegPct =
+    typeof wc.workingCapitalPeg === "number" && Number.isFinite(wc.workingCapitalPeg)
+      ? wc.workingCapitalPeg
+      : null;
   const bufferMonths = wc.requiredLiquidityBufferMonths ?? null;
-  const seasonality = wc.seasonalityFactor ?? null;
   const capEx = wc.capExNeedsAnnual ?? null;
 
   // Determine completeness
@@ -34,20 +55,38 @@ export function scoreWorkingCapital(input: DealInput): WorkingCapitalResult {
   const ccc =
     dso !== null && dio !== null && dpo !== null ? dso + dio - dpo : null;
 
-  // Estimated peg: typically 10–15% of annual revenue
+  // Imputed defaults — these fire industry-time on the Analyzer, but we
+  // also fall back to them here in case the buyer never set explicit values.
   const annualRev = input.annualRevenue ?? null;
-  const estimatedPeg =
-    wcPeg !== null
-      ? wcPeg
-      : annualRev && monthlyRev
-        ? (monthlyRev * 12 * 0.12) / 1
-        : annualRev
-          ? annualRev * 0.12
-          : null;
+  const imputed = imputeWorkingCapitalDefaults({
+    revenue: annualRev,
+    industry: input.industry,
+    currentCapEx: capEx,
+    currentWcReserve: null,
+    currentWcPegPct: wcPegPct,
+  });
 
-  // Liquidity buffer required
+  // Estimated WC peg in DOLLARS.
+  // Priority 1: user-entered % × revenue
+  // Priority 2: industry-default % × revenue
+  // Priority 3: 12% × revenue (legacy fallback)
+  let estimatedPeg: number | null;
+  if (wcPegPct !== null && annualRev) {
+    estimatedPeg = Math.round(annualRev * (wcPegPct / 100));
+  } else if (imputed.workingCapitalReserve !== null) {
+    estimatedPeg = imputed.workingCapitalReserve;
+  } else if (annualRev) {
+    estimatedPeg = Math.round(annualRev * 0.12);
+  } else {
+    estimatedPeg = null;
+  }
+
+  // Liquidity buffer required (months × monthly fixed costs).  If not set,
+  // fall back to estimated peg so DSCR still sees a working-capital reserve.
+  const explicitBuffer =
+    bufferMonths !== null && monthlyFC ? monthlyFC * bufferMonths : null;
   const liquidityBufferRequired =
-    bufferMonths && monthlyFC ? monthlyFC * bufferMonths : null;
+    explicitBuffer ?? estimatedPeg ?? null;
 
   // Risk assessment
   let cashConversionRisk: WorkingCapitalResult["cashConversionRisk"] = "missing";
@@ -112,7 +151,22 @@ export function scoreWorkingCapital(input: DealInput): WorkingCapitalResult {
     );
   }
 
-  const capExBurden = capEx ?? null;
+  // CapEx burden in DSCR/Buyer Cash Flow uses the user value first, otherwise
+  // the industry-default imputation.
+  const capExBurden = capEx ?? imputed.capExNeedsAnnual;
+
+  const indDef = getIndustryDefault(input.industry);
+  const imputedNotes: string[] = [];
+  if (capEx === null && imputed.capExNeedsAnnual !== null && indDef) {
+    imputedNotes.push(
+      `CapEx imputed at ${(indDef.capExPct * 100).toFixed(1)}% of revenue (${indDef.label} industry default).`,
+    );
+  }
+  if (wcPegPct === null && imputed.workingCapitalReserve !== null && indDef) {
+    imputedNotes.push(
+      `WC reserve imputed at ${(indDef.wcPct * 100).toFixed(0)}% of revenue (${indDef.label} industry default).`,
+    );
+  }
 
   return {
     status,
@@ -123,7 +177,7 @@ export function scoreWorkingCapital(input: DealInput): WorkingCapitalResult {
     cashConversionRisk,
     workingCapitalRisk: wcRisk,
     closingAdjustment,
-    buyerWarnings: warnings,
+    buyerWarnings: [...warnings, ...imputedNotes],
     blocksCloseReady: status === "missing",
     arOverdueRisk,
     inventoryStaleRisk,
@@ -132,6 +186,7 @@ export function scoreWorkingCapital(input: DealInput): WorkingCapitalResult {
       status === "complete"
         ? `NWC: $${(nwc ?? 0).toLocaleString()}; Peg: $${(estimatedPeg ?? 0).toLocaleString()}`
         : "Working capital incomplete",
+      ...imputedNotes,
     ],
   };
 }

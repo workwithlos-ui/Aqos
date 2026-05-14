@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
+
+/**
+ * SaveStatus indicator (P0 ship-blocker 3.6).
+ *
+ * Three explicit states:
+ *   - "idle"   → either nothing yet, or muted "Saved · Xs ago" auto-incrementing
+ *   - "saving" → spinner + "Saving…" (must appear within 500ms of click)
+ *   - "saved"  → green check + "Saved" (sticks for ~3s then collapses to idle)
+ */
+
+export type SaveStatusState = "idle" | "saving" | "saved";
 
 function relative(ts: number | null): string {
   if (!ts) return "Not saved yet";
@@ -13,16 +24,48 @@ function relative(ts: number | null): string {
   return `Saved · ${Math.floor(h / 24)}d ago`;
 }
 
-export function SaveStatus({ lastSavedAt }: { lastSavedAt: number | null }) {
-  const [tick, setTick] = useState(0);
+export function SaveStatus({
+  state = "idle",
+  lastSavedAt,
+}: {
+  state?: SaveStatusState;
+  lastSavedAt: number | null;
+}) {
+  const [, force] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 5_000);
+    const id = setInterval(() => force((t) => t + 1), 5_000);
     return () => clearInterval(id);
   }, []);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _ = tick;
+
+  if (state === "saving") {
+    return (
+      <div
+        data-testid="save-status-saving"
+        className="inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300"
+      >
+        <Loader2 className="size-3.5 animate-spin" />
+        <span>Saving…</span>
+      </div>
+    );
+  }
+
+  if (state === "saved") {
+    return (
+      <div
+        data-testid="save-status-saved"
+        className="inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300"
+      >
+        <Check className="size-3.5" />
+        <span>Saved</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div
+      data-testid="save-status-idle"
+      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+    >
       <Check className="size-3.5 text-emerald-600" />
       <span>{relative(lastSavedAt)}</span>
     </div>

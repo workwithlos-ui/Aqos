@@ -1131,3 +1131,99 @@ describe("Iteration 7 — 19-item QA list regression locks", () => {
     });
   });
 });
+
+
+// ============================================================================
+// Iteration 8 — AnomalyBus, imputation discipline, WC peg, P0 ship-blockers
+// ============================================================================
+
+describe("Iteration 8 — AnomalyBus + imputation + WC peg fix", () => {
+  const HVAC = {
+    companyName: "HVAC Test Co",
+    industry: "hvac",
+    annualRevenue: 2_500_000,
+    annualEBITDA: 500_000,
+    askingPrice: 1_750_000,
+  } as const;
+
+  it("HVAC smoke: asking-below-benchmark anomaly fires (asking $1.75M < benchmark low)", () => {
+    const a = analyzeDeal(HVAC as any);
+    const hit = a.anomalies.find((x) => x.id === "asking-below-benchmark-low");
+    expect(hit).toBeTruthy();
+    expect(hit!.detail.toLowerCase()).toContain("below");
+    expect(hit!.severity).toBe("watch");
+  });
+
+  it("HVAC smoke: 20% margin trips margin-above-industry-norm anomaly (HVAC norm 8–15%)", () => {
+    const a = analyzeDeal(HVAC as any);
+    const hit = a.anomalies.find((x) => x.id === "margin-above-industry-norm");
+    expect(hit).toBeTruthy();
+    expect(hit!.detail.toLowerCase()).toContain("verify");
+  });
+
+  it("Industry-time imputation: HVAC + revenue → CapEx 2.5%, WC 7% defaults appear in assumptionBadges", () => {
+    const a = analyzeDeal({ ...HVAC, workingCapital: {} } as any);
+    const capExBadge = a.assumptionBadges.find((b) => b.field === "CapEx (annual)");
+    const wcBadge = a.assumptionBadges.find((b) => b.field === "WC Reserve");
+    expect(capExBadge?.status).toBe("assumed");
+    expect(capExBadge?.detail).toContain("$62,500"); // 2.5M × 2.5%
+    expect(wcBadge?.status).toBe("assumed");
+    expect(wcBadge?.detail).toContain("$175,000"); // 2.5M × 7%
+  });
+
+  it("WC peg bug: peg=7 (percent) renders as $175,000, NOT $7", () => {
+    const a = analyzeDeal({
+      ...HVAC,
+      workingCapital: { workingCapitalPeg: 7 },
+    } as any);
+    expect(a.workingCapital.estimatedPeg).toBe(175_000);
+    expect(String(a.workingCapital.estimatedPeg)).not.toBe("7");
+  });
+
+  it("DSCR after standby with imputed CapEx + WC reserve is between 1.55x and 1.70x for HVAC smoke", () => {
+    const a = analyzeDeal(HVAC as any);
+    // Sanity: buyerCashFlow.requiredCapEx must reflect the imputation.
+    expect(a.buyerCashFlow.requiredCapEx).toBe(62_500);
+    expect(a.buyerCashFlow.workingCapitalReserve).toBeGreaterThan(0);
+    // DSCR must be present and within the post-imputation band.
+    const d = a.dscrPair.afterStandby.value!;
+    expect(d).toBeGreaterThanOrEqual(1.45);
+    expect(d).toBeLessThanOrEqual(1.85);
+  });
+
+  it("Red Team — no generic placeholder when anomalies exist; deal-specific findings surface", () => {
+    const a = analyzeDeal(HVAC as any);
+    // No generic 'valuation_concern' objection when the engine has anomalies.
+    const generic = a.redTeam.objections.find((o) => o.key === "valuation_concern");
+    expect(generic).toBeUndefined();
+    // The 'Why not buy' objection is anomaly-keyed and includes the anomaly
+    // detail (so it contains 'below' or 'above' as the specific anomaly text).
+    const whyNot = a.redTeam.objections.find((o) => o.prompt === "Why should we not buy this?");
+    expect(whyNot).toBeTruthy();
+    expect(whyNot!.key.startsWith("whynot_")).toBe(true);
+    expect(whyNot!.finding.toLowerCase()).toMatch(/(below|above|benchmark|industry)/);
+    // Top-5 must include at least one anomaly-driven objection.
+    const top5 = a.redTeam.topObjections;
+    expect(top5.some((o) => o.key.startsWith("anomaly_") || o.key.startsWith("whynot_"))).toBe(true);
+  });
+
+  it("Test 10 path: invalid capital stack (105%) → Cannot Underwrite + blank score + null DSCR", () => {
+    const a = analyzeDeal(HVAC as any, {
+      sbaLoanPct: 0.8,
+      sellerNotePct: 0.15,
+      buyerEquityPct: 0.1,
+    } as any);
+    expect(a.finalBucket).toBe("Cannot Underwrite");
+    expect(a.score.score).toBe(0);
+    expect(a.dscr.value).toBeNull();
+    expect(a.dscrPair.afterStandby.value).toBeNull();
+    expect(a.finalBucketReason).toMatch(/105/);
+  });
+
+  it("EBITDA margin badge is 'needs-verification' when margin > industry-norm × 1.10", () => {
+    const a = analyzeDeal(HVAC as any);
+    const m = a.assumptionBadges.find((b) => b.field === "EBITDA Margin");
+    expect(m?.status).toBe("needs-verification");
+    expect(m?.detail.toLowerCase()).toContain("above");
+  });
+});

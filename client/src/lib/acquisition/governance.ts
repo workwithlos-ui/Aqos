@@ -363,23 +363,52 @@ export function computeDealFreeze(analysis: DealAnalysis): DealFreezeResult {
 export function computeRedTeam(analysis: DealAnalysis): RedTeamResult {
   const objections: RedTeamObjection[] = [];
 
-  // 1. Why should we NOT buy this?
-  objections.push({
-    key: "valuation_concern",
-    prompt: "Why should we not buy this?",
-    finding:
-      analysis.evToEBITDA.value !== null && analysis.evToEBITDA.value > 6
-        ? `EV/EBITDA of ${analysis.evToEBITDA.display} is above typical range.`
-        : "Valuation appears reasonable.",
-    evidenceNeeded: ["Recent comparable transactions", "Broker valuation support"],
-    severity:
-      analysis.evToEBITDA.value !== null && analysis.evToEBITDA.value > 7
-        ? "high"
-        : "medium",
-    owner: "CFO",
-    status: "open",
-    cleared: false,
-  });
+  // 1. Why should we NOT buy this?  Consume the AnomalyBus: if the engine
+  // already flagged a deal-specific anomaly (asking-below-benchmark,
+  // margin-above-norm, offer-inversion, etc.), promote the most severe one
+  // here instead of printing a generic objection.
+  const askingAnomaly = (analysis.anomalies ?? []).find(
+    (x) => x.id === "asking-below-benchmark-low",
+  );
+  const inversionAnomaly = (analysis.anomalies ?? []).find(
+    (x) => x.id === "offer-inversion",
+  );
+  const marginAnomaly = (analysis.anomalies ?? []).find(
+    (x) => x.id === "margin-above-industry-norm",
+  );
+  const lead = askingAnomaly ?? inversionAnomaly ?? marginAnomaly ?? (analysis.anomalies ?? [])[0] ?? null;
+  if (lead) {
+    objections.push({
+      key: `whynot_${lead.id}`,
+      prompt: "Why should we not buy this?",
+      finding: lead.detail,
+      evidenceNeeded:
+        lead.diligenceTriggers && lead.diligenceTriggers.length > 0
+          ? lead.diligenceTriggers
+          : ["Recent comparable transactions", "Broker valuation support"],
+      severity: lead.severity === "critical" ? "critical" : "high",
+      owner: "CFO",
+      status: "open",
+      cleared: false,
+    });
+  } else {
+    objections.push({
+      key: "valuation_concern",
+      prompt: "Why should we not buy this?",
+      finding:
+        analysis.evToEBITDA.value !== null && analysis.evToEBITDA.value > 6
+          ? `EV/EBITDA of ${analysis.evToEBITDA.display} is above typical range.`
+          : "Valuation appears reasonable.",
+      evidenceNeeded: ["Recent comparable transactions", "Broker valuation support"],
+      severity:
+        analysis.evToEBITDA.value !== null && analysis.evToEBITDA.value > 7
+          ? "high"
+          : "medium",
+      owner: "CFO",
+      status: "open",
+      cleared: false,
+    });
+  }
 
   // 2. What must be true for this to work?
   objections.push({
