@@ -30,12 +30,17 @@ export default function Exports() {
 
   const dealId = params.id ?? activeDealId ?? deals.find((d) => !d.isTest)?.id ?? "";
 
-  // Always look up by id at render time (no stale ref).
+  // Always look up by id at render time (no stale ref). Key analysis on
+  // both id + updatedAt + a stable JSON snapshot so any change to the deal
+  // object (or selection) immediately re-runs analyzeDeal.
   const deal = useMemo(() => deals.find((d) => d.id === dealId) ?? null, [deals, dealId]);
+  const dealFingerprint = useMemo(() => (deal ? JSON.stringify(deal) : ""), [deal]);
+  const assumptionsFingerprint = useMemo(() => JSON.stringify(assumptions), [assumptions]);
 
   const analysis = useMemo(
     () => (deal ? analyzeDeal(deal, assumptions) : null),
-    [deal, assumptions],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dealId, dealFingerprint, assumptionsFingerprint],
   );
 
   const payload = useMemo(
