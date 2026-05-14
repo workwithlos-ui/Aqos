@@ -62,7 +62,18 @@ export default function Assumptions() {
             <NumField label="Seller note rate" value={f.sellerNoteRate} step={0.005} pct onChange={(v) => update("sellerNoteRate", v)} />
             <NumField label="Seller note term" value={f.sellerNoteTermYears} onChange={(v) => update("sellerNoteTermYears", v)} />
             <NumField label="Seller note standby (months)" value={f.sellerNoteStandbyMonths} onChange={(v) => update("sellerNoteStandbyMonths", v)} />
+            <NumField
+              label="Buyer DSCR target"
+              value={f.buyerDscrTarget ?? 1.5}
+              step={0.05}
+              onChange={(v) => update("buyerDscrTarget", v)}
+            />
           </div>
+          <p className="text-xs text-muted-foreground">
+            Buyer DSCR target is your personal margin of safety, separate from the
+            <span className="font-mono"> 1.25x </span>
+            lender minimum. Max Supportable Purchase Price is computed at this target.
+          </p>
           <div className="flex gap-2 pt-2 border-t border-border">
             <Button onClick={save}>Save assumptions</Button>
             <Button variant="outline" className="bg-card" onClick={() => { resetAssumptions(); toast.success("Reset to defaults"); }}>

@@ -40,6 +40,7 @@ import type {
   DiligenceItem,
   DataQualityResult,
   AssumptionBadge,
+  DealAnomaly,
 } from "./types";
 
 // ─── 1. Buyer Cash Flow After Debt Service ───────────────────────────────────
@@ -105,29 +106,45 @@ export function computeBuyerCashFlow(a: DealAnalysis): BuyerCashFlowResult {
   const buyerCashFlow = buildCF("Buyer Cash Flow (after standby)", ds);
   const buyerCashFlowDuringStandby = buildCF("Buyer Cash Flow (during standby)", dsDuringStandby);
 
-  // Cash-on-cash return = Buyer Cash Flow / Buyer Equity.
+  // Cash-on-cash return uses a buyer-realistic denominator: equity + closing-cost reserve.
+  // Closing-cost reserve covers legal, QoE, post-close runway. Default 5% of PP if unset.
   const equityAmount = a.capitalStack.buyerEquity.amount;
+  const purchasePrice = a.capitalStack.purchasePriceUsed;
+  const closingCostsPct = a.assumptions.closingCostsPct ?? 0.05;
+  const closingCostsReserve =
+    isFiniteNumber(purchasePrice) && purchasePrice! > 0
+      ? Math.round(purchasePrice! * closingCostsPct)
+      : null;
+  const cashOutTotal =
+    isFiniteNumber(equityAmount) && equityAmount! > 0
+      ? equityAmount! + (closingCostsReserve ?? 0)
+      : null;
   let cashOnCashReturn: MetricResult;
-  if (
-    buyerCashFlow.value !== null &&
-    isFiniteNumber(equityAmount) &&
-    equityAmount! > 0
-  ) {
-    const coc = buyerCashFlow.value / equityAmount!;
+  if (buyerCashFlow.value !== null && cashOutTotal !== null && cashOutTotal > 0) {
+    const coc = buyerCashFlow.value / cashOutTotal;
     cashOnCashReturn = {
       value: coc,
       display: fmtPct(coc),
-      status: buyerCashFlow.status,
-      formula: "Buyer Cash Flow / Buyer Equity",
-      inputs: { BuyerCashFlow: buyerCashFlow.value, BuyerEquity: equityAmount! },
+      status: closingCostsReserve === null ? "estimated" : buyerCashFlow.status,
+      formula: "Buyer Cash Flow / (Buyer Equity + Closing Costs)",
+      inputs: {
+        BuyerCashFlow: buyerCashFlow.value,
+        BuyerEquity: equityAmount!,
+        ClosingCostsReserve: closingCostsReserve,
+        ClosingCostsPct: closingCostsPct,
+      },
+      warning:
+        closingCostsReserve === null
+          ? `Closing costs estimated at ${(closingCostsPct * 100).toFixed(0)}% of purchase price (legal + QoE + runway).`
+          : undefined,
     };
   } else {
     cashOnCashReturn = {
       value: null,
       display: "missing",
       status: "missing",
-      formula: "Buyer Cash Flow / Buyer Equity",
-      inputs: { BuyerCashFlow: buyerCashFlow.value ?? null, BuyerEquity: equityAmount ?? null },
+      formula: "Buyer Cash Flow / (Buyer Equity + Closing Costs)",
+      inputs: { BuyerCashFlow: buyerCashFlow.value ?? null, BuyerEquity: equityAmount ?? null, ClosingCostsReserve: closingCostsReserve },
     };
   }
 
@@ -182,12 +199,15 @@ export function computeMaxSupportablePP(
   const earnings = a.earningsUsed;
   const currentPrice = a.capitalStack.purchasePriceUsed;
 
+  const buyerDscrTargetUsed = a.assumptions.buyerDscrTarget ?? 1.5;
   if (!isFiniteNumber(earnings) || earnings! <= 0) {
     warnings.push("Earnings missing or non-positive — cannot compute max supportable price.");
     return {
       at1_25x: null,
       at1_50x: null,
       at2_00x: null,
+      atBuyerTarget: null,
+      buyerDscrTargetUsed,
       currentPrice,
       priceIsSupported: false,
       warnings,
@@ -197,6 +217,7 @@ export function computeMaxSupportablePP(
   const at1_25x = maxPriceForDscr(input, a.assumptions, earnings!, 1.25);
   const at1_50x = maxPriceForDscr(input, a.assumptions, earnings!, 1.5);
   const at2_00x = maxPriceForDscr(input, a.assumptions, earnings!, 2.0);
+  const atBuyerTarget = maxPriceForDscr(input, a.assumptions, earnings!, buyerDscrTargetUsed);
 
   const priceIsSupported =
     currentPrice !== null && at1_25x !== null && currentPrice <= at1_25x;
@@ -205,6 +226,8 @@ export function computeMaxSupportablePP(
     at1_25x,
     at1_50x,
     at2_00x,
+    atBuyerTarget,
+    buyerDscrTargetUsed,
     currentPrice,
     priceIsSupported,
     warnings,
@@ -494,14 +517,26 @@ export function computeRecommendedOffer(a: DealAnalysis): RecommendedOfferResult
 
   const e = earnings!;
 
-  // Target price = benchmark median × earnings (if available), else 3.5x earnings.
+  // Per the buyer-grade brief: target = min(benchmark_median, max_supportable_at_buyer_dscr).
+  // Buyer DSCR target defaults to 1.50x (a comfortable cushion above the lender 1.25x floor).
+  const buyerDscrTarget = a.assumptions.buyerDscrTarget ?? 1.5;
   const medianMultiple = benchmark?.median ?? 3.5;
-  const targetPrice = Math.round(e * medianMultiple / 1000) * 1000;
+  const benchmarkAnchor = Math.round((e * medianMultiple) / 1000) * 1000;
+  // Pull the supportable price at the buyer DSCR target, or interpolate between 1.25x and 1.50x rungs.
+  const maxAtBuyerDscr =
+    a.maxSupportablePP.atBuyerTarget ??
+    a.maxSupportablePP.at1_50x ??
+    a.maxSupportablePP.at1_25x ??
+    null;
+  const targetPrice = (() => {
+    if (benchmarkAnchor && maxAtBuyerDscr) return Math.min(benchmarkAnchor, maxAtBuyerDscr);
+    return benchmarkAnchor || maxAtBuyerDscr || Math.round((e * 3.5) / 1000) * 1000;
+  })();
 
   // Opening offer = 10% below target (anchoring room).
   const openingOffer = Math.round(targetPrice * 0.9 / 1000) * 1000;
 
-  // Maximum price = max supportable at 1.25x DSCR.
+  // Maximum price = max supportable at the 1.25x lender floor.
   const maximumPrice = a.maxSupportablePP.at1_25x ?? Math.round(e * (benchmark?.high ?? 4.5) / 1000) * 1000;
 
   // Seller note: 15% of target price (matching default assumptions).
@@ -541,10 +576,18 @@ export function computeRecommendedOffer(a: DealAnalysis): RecommendedOfferResult
   );
   const requiredTransitionWeeks = ownerDependencyUnknown ? 24 : 12;
 
+  const targetSource =
+    benchmarkAnchor && maxAtBuyerDscr
+      ? targetPrice === maxAtBuyerDscr
+        ? `the lower of the benchmark median (${fmtCurrency(benchmarkAnchor)}) and the price the deal supports at buyer DSCR ${buyerDscrTarget.toFixed(2)}x (${fmtCurrency(maxAtBuyerDscr)})`
+        : `the lower of the benchmark median (${fmtCurrency(benchmarkAnchor)}) and the price the deal supports at buyer DSCR ${buyerDscrTarget.toFixed(2)}x (${fmtCurrency(maxAtBuyerDscr)})`
+      : benchmarkAnchor
+        ? `the benchmark median (${medianMultiple.toFixed(1)}x ${basis})`
+        : `the price the deal supports at buyer DSCR ${buyerDscrTarget.toFixed(2)}x`;
   const rationale = [
-    `Target price of ${fmtCurrency(targetPrice)} is anchored at ${medianMultiple.toFixed(1)}x ${basis}${benchmark ? " (benchmark median)" : " (heuristic \u2014 no benchmark available)"}.`,
+    `Target price of ${fmtCurrency(targetPrice)} is anchored at ${targetSource}.`,
     `Opening offer of ${fmtCurrency(openingOffer)} gives 10% negotiating room.`,
-    `Maximum price of ${fmtCurrency(maximumPrice)} is the highest price at which the deal services debt at 1.25x DSCR.`,
+    `Maximum price of ${fmtCurrency(maximumPrice)} is the highest price at which the deal services debt at 1.25x DSCR (lender floor).`,
     needsEarnout
       ? `Earnout of ${fmtCurrency(earnoutAmount!)} tied to post-close performance reduces upfront risk.`
       : "No earnout recommended \u2014 margin and revenue trend are acceptable.",
@@ -909,4 +952,159 @@ export function computeAssumptionBadges(
   });
 
   return badges;
+}
+
+
+// ─── 9. Deal-Specific Anomaly Detection ──────────────────────────────────────
+// Pulled out so Copilot's "Challenge my assumptions" and the Red Team page can
+// share the same deterministic objection list.
+
+const INDUSTRY_NORMAL_MARGINS: Record<string, { min: number; max: number }> = {
+  hvac: { min: 0.1, max: 0.2 },
+  plumbing: { min: 0.12, max: 0.22 },
+  electrical: { min: 0.1, max: 0.2 },
+  landscaping: { min: 0.08, max: 0.18 },
+  roofing: { min: 0.12, max: 0.22 },
+  restaurant: { min: 0.06, max: 0.15 },
+  "it services": { min: 0.12, max: 0.25 },
+  saas: { min: 0.15, max: 0.4 },
+  ecommerce: { min: 0.05, max: 0.15 },
+  manufacturing: { min: 0.08, max: 0.18 },
+};
+
+export function computeAnomalies(
+  input: DealInput,
+  a: DealAnalysis,
+): DealAnomaly[] {
+  const anomalies: DealAnomaly[] = [];
+  const askingOrPP = a.normalizedPurchasePrice;
+
+  // ── 1. Asking < benchmark low ─────────────────────────────────────────────
+  if (
+    a.valuation.benchmarkLowValue !== null &&
+    askingOrPP !== null &&
+    a.valuation.compatibility !== "unavailable" &&
+    a.valuation.compatibility !== "reference_only" &&
+    askingOrPP < a.valuation.benchmarkLowValue
+  ) {
+    anomalies.push({
+      id: "asking-below-benchmark-low",
+      severity: "watch",
+      title: "Asking is below industry benchmark low",
+      detail: `${fmtCurrency(askingOrPP)} sits below the industry benchmark low of ${fmtCurrency(a.valuation.benchmarkLowValue)}. This usually signals one of: (a) hidden problems the seller is trying to move quickly, (b) earnings are inflated and a normalized re-cast will lift the multiple back into range, (c) genuine motivated seller. Verify before celebrating.`,
+      diligenceTriggers: [
+        "Ask the broker why the price is below the comp range",
+        "Run normalized add-back review with QoE professional",
+        "Check tax returns vs. P&L for revenue/EBITDA discrepancies",
+        "Confirm no pending litigation, lease cliff, or customer loss",
+      ],
+    });
+  }
+
+  // ── 2. Margin above industry norm ─────────────────────────────────────────
+  if (a.ebitdaMargin.value !== null && input.industry) {
+    const norm = INDUSTRY_NORMAL_MARGINS[input.industry.toLowerCase().trim()];
+    if (norm && a.ebitdaMargin.value > norm.max) {
+      anomalies.push({
+        id: "margin-above-industry-norm",
+        severity: "watch",
+        title: "EBITDA margin is above industry norm",
+        detail: `Reported EBITDA margin of ${fmtPct(a.ebitdaMargin.value)} exceeds the typical ${input.industry} range of ${fmtPct(norm.min)}–${fmtPct(norm.max)}. Verify add-back legitimacy before relying on this margin.`,
+        diligenceTriggers: [
+          "Itemize add-backs line by line — flag any owner-personal or one-time items",
+          "Tie EBITDA back to tax returns",
+          "Confirm gross margin and labor cost lines are consistent with industry",
+        ],
+      });
+    }
+    if (norm && a.ebitdaMargin.value < norm.min && a.ebitdaMargin.value > 0) {
+      anomalies.push({
+        id: "margin-below-industry-norm",
+        severity: "watch",
+        title: "EBITDA margin is below industry norm",
+        detail: `Reported EBITDA margin of ${fmtPct(a.ebitdaMargin.value)} is below the typical ${input.industry} range of ${fmtPct(norm.min)}–${fmtPct(norm.max)}. The deal looks like a turnaround, not a stable cash flow buy.`,
+        diligenceTriggers: [
+          "Identify which cost line is out of range (COGS, labor, SG&A)",
+          "Build a margin-recovery plan before relying on post-close EBITDA",
+          "Underwrite at the current margin, not a hoped-for normalized margin",
+        ],
+      });
+    }
+  }
+
+  // ── 3. Offer inversion: max supportable < asking ──────────────────────────
+  if (
+    askingOrPP !== null &&
+    a.maxSupportablePP.at1_25x !== null &&
+    a.maxSupportablePP.at1_25x < askingOrPP
+  ) {
+    anomalies.push({
+      id: "offer-inversion",
+      severity: "critical",
+      title: "Offer inversion: deal cannot service debt at asking price",
+      detail: `The maximum price the deal supports at the 1.25x DSCR lender floor is ${fmtCurrency(a.maxSupportablePP.at1_25x)} — below the asking price of ${fmtCurrency(askingOrPP)}. A standard SBA stack will not close at this price.`,
+      diligenceTriggers: [
+        `Renegotiate to ≤ ${fmtCurrency(a.maxSupportablePP.at1_25x)} or restructure capital stack`,
+        "Increase seller note, extend standby, or add buyer equity",
+        "Walk if seller will not move and earnings cannot be re-cast",
+      ],
+    });
+  }
+
+  // ── 4. DSCR after standby weak ────────────────────────────────────────────
+  const dscrAfter = a.dscrPair.afterStandby.value;
+  if (dscrAfter !== null && dscrAfter < 1.25) {
+    anomalies.push({
+      id: "dscr-fails-lender-floor",
+      severity: "critical",
+      title: "DSCR after standby fails lender floor",
+      detail: `DSCR after standby is ${fmtMultiple(dscrAfter)} — below the 1.25x SBA floor. Lender will reject or require restructure.`,
+      diligenceTriggers: [
+        "Restructure capital stack (more seller note, longer standby, more equity)",
+        "Renegotiate purchase price",
+        "Validate add-backs to lift earnings if defensible",
+      ],
+    });
+  } else if (dscrAfter !== null && dscrAfter < 1.4) {
+    anomalies.push({
+      id: "dscr-thin-cushion",
+      severity: "watch",
+      title: "DSCR cushion is thin",
+      detail: `DSCR after standby is ${fmtMultiple(dscrAfter)} — above the 1.25x lender floor but below the 1.40x buyer comfort line. A modest revenue or rate shock will break it.`,
+      diligenceTriggers: [
+        "Run buyer's chosen stress scenarios — confirm the deal survives the −10% EBITDA case",
+        "Negotiate longer seller-note standby or partial earnout",
+      ],
+    });
+  }
+
+  // ── 5. Working capital missing near close ─────────────────────────────────
+  if (a.workingCapital.status === "missing" || a.workingCapital.netWorkingCapital === null) {
+    anomalies.push({
+      id: "wc-missing",
+      severity: "watch",
+      title: "Working capital data not provided",
+      detail: "AR, AP, and inventory have not been provided. The closing-day working-capital peg cannot be calculated, so the buyer cannot model true cash needed at close.",
+      diligenceTriggers: [
+        "Request AR aging, AP aging, and inventory turn report",
+        "Negotiate a working-capital target / true-up clause in the LOI",
+      ],
+    });
+  }
+
+  // ── 6. Customer concentration unknown ─────────────────────────────────────
+  if (input.customerConcentrationPct === undefined || input.customerConcentrationPct === null) {
+    anomalies.push({
+      id: "customer-concentration-unknown",
+      severity: "watch",
+      title: "Customer concentration is unknown",
+      detail: "Top-customer revenue share has not been provided. Concentration risk silently inflates score and risk-adjusted return.",
+      diligenceTriggers: [
+        "Request top-10 customer revenue table for last 36 months",
+        "Confirm contract assignability and renewal terms",
+      ],
+    });
+  }
+
+  return anomalies;
 }

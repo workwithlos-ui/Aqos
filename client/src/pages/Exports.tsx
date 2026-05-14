@@ -20,19 +20,24 @@ const KINDS: Array<{ id: ExportKind; label: string; desc: string }> = [
 
 export default function Exports() {
   const params = useParams<{ id?: string }>();
-  const { deals, assumptions } = useDealStore();
-  const [dealId, setDealId] = useState<string>(params.id ?? deals.find((d) => !d.isTest)?.id ?? "");
+  const { deals, assumptions, activeDealId, setActiveDealId } = useDealStore();
   const [kind, setKind] = useState<ExportKind>("ic-memo");
 
+  // Route param wins over store; otherwise the store's active deal id wins.
   useEffect(() => {
-    if (params.id) setDealId(params.id);
-  }, [params.id]);
+    if (params.id && params.id !== activeDealId) setActiveDealId(params.id);
+  }, [params.id, activeDealId, setActiveDealId]);
 
-  const deal = useMemo(() => deals.find((d) => d.id === dealId), [deals, dealId]);
+  const dealId = params.id ?? activeDealId ?? deals.find((d) => !d.isTest)?.id ?? "";
+
+  // Always look up by id at render time (no stale ref).
+  const deal = useMemo(() => deals.find((d) => d.id === dealId) ?? null, [deals, dealId]);
+
   const analysis = useMemo(
     () => (deal ? analyzeDeal(deal, assumptions) : null),
     [deal, assumptions],
   );
+
   const payload = useMemo(
     () => (analysis ? generateExport(kind, analysis) : null),
     [analysis, kind],
@@ -41,7 +46,7 @@ export default function Exports() {
   function copy() {
     if (!payload) return;
     navigator.clipboard.writeText(payload.content);
-    toast.success("Copied to clipboard");
+    toast.success(`Copied "${payload.title}" to clipboard`);
   }
   function download() {
     if (!payload) return;
@@ -52,6 +57,7 @@ export default function Exports() {
     a.download = payload.filename;
     a.click();
     URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${payload.filename}`);
   }
 
   return (
@@ -61,22 +67,29 @@ export default function Exports() {
           <div className="metric-label">Exports</div>
           <h1 className="font-display text-3xl font-semibold mt-1">Buyer-grade deliverables</h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-            Every export is generated from the verified DealAnalysis. Missing
-            data appears literally as "missing" — nothing is invented.
+            Every export is generated from the verified DealAnalysis for the
+            selected deal. Missing data appears literally as "missing" — nothing
+            is invented.
           </p>
         </div>
+        {deal && (
+          <div className="text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md border border-border">
+            <span className="font-medium text-foreground">Currently exporting:</span>{" "}
+            <span className="font-mono">{deal.companyName?.trim() || "Untitled deal"}</span>
+          </div>
+        )}
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <aside className="panel p-5 lg:col-span-1 flex flex-col gap-4">
           <div>
             <div className="metric-label mb-1">Deal</div>
-            <Select value={dealId} onValueChange={setDealId}>
+            <Select value={dealId} onValueChange={(v) => setActiveDealId(v)}>
               <SelectTrigger><SelectValue placeholder="Select deal" /></SelectTrigger>
               <SelectContent>
                 {deals.map((d) => (
                   <SelectItem key={d.id} value={d.id ?? ""}>
-                    {d.companyName}{d.isDemo ? " (demo)" : d.isTest ? " (test)" : ""}
+                    {d.companyName?.trim() || "Untitled deal"}{d.isDemo ? " (demo)" : d.isTest ? " (test)" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>

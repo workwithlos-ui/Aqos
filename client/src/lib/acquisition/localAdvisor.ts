@@ -75,6 +75,151 @@ function caveats(c: AdvisorDealContext): string[] {
   return out;
 }
 
+// ─── Composers (Copilot writes from verified outputs only) ──────────────────
+
+function composeICMemoFromContext(c: AdvisorDealContext): string {
+  const lines: string[] = [];
+  lines.push(`# IC Memo — ${c.companyName}${c.isDemoOrTest ? " (DEMO)" : ""}`);
+  lines.push(`*Composed by Deal Copilot from verified engine outputs only. ${c.isPreliminary ? "**THIS IS A PRELIMINARY ANALYSIS — DO NOT RELY UNTIL VERIFIED.**" : ""}*`);
+  lines.push("");
+  lines.push(`## Executive Summary`);
+  lines.push(`Engine verdict: **${c.verdict}**${c.isPreliminary ? " (PRELIMINARY)" : ""} — ${c.verdictRationale}`);
+  lines.push(`Refined verdict (buyer language): **${c.refinedVerdict}** — ${c.refinedVerdictReason}`);
+  lines.push(`Final bucket: **${c.scoreBucket}** — ${c.finalBucketReason}`);
+  lines.push(`${c.scoreLabel}: ${c.scoreOutOf100}/100. Confidence: **${c.verdictConfidence}** — ${c.verdictConfidenceReason}.`);
+  lines.push("");
+  lines.push(`## Deal Snapshot`);
+  lines.push(`- Industry: ${c.industry}`);
+  lines.push(`- Revenue: ${c.revenue}`);
+  lines.push(`- ${c.earningsBasis}: ${c.earnings}`);
+  lines.push(`- Asking / Purchase Price: ${c.purchasePriceUsed} (${c.purchasePriceSource})`);
+  lines.push(`- EV/EBITDA: ${c.multipleEvEbitda} | EV/SDE: ${c.multipleEvSde}`);
+  lines.push(`- EBITDA margin: ${c.ebitdaMargin} | SDE margin: ${c.sdeMargin}`);
+  lines.push("");
+  lines.push(`## Valuation`);
+  lines.push(`Benchmark: ${c.benchmark}. Band: ${c.benchmarkBand}.`);
+  lines.push(`Compatibility: **${c.benchmarkCompatibility}**. Band position: ${c.bandPosition}.`);
+  lines.push(`Median implied value: ${c.benchmarkMedianImpliedValue}. Gap vs asking: ${c.benchmarkValueGapVsAsking}.`);
+  lines.push("");
+  lines.push(`## Capital Stack & DSCR`);
+  lines.push(`- Purchase price: ${c.capitalStack.purchasePrice}`);
+  lines.push(`- SBA: ${c.capitalStack.sba} → annual DS ${c.capitalStack.sbaAnnualDebtService}`);
+  lines.push(`- Seller note: ${c.capitalStack.sellerNote} → annual DS ${c.capitalStack.sellerNoteAnnualDebtService} (standby ${c.capitalStack.sellerNoteStandby})`);
+  lines.push(`- Buyer equity: ${c.capitalStack.buyerEquity}`);
+  lines.push(`- Total annual debt service: ${c.capitalStack.totalAnnualDebtService}`);
+  lines.push(`- DSCR during standby: ${c.dscr.duringStandby} | after standby: **${c.dscr.afterStandby}** (${c.dscr.verdict})`);
+  lines.push("");
+  lines.push(`## Buyer Cash Flow`);
+  lines.push(`- Buyer cash flow during standby: ${c.buyerCashFlowDuringStandby}`);
+  lines.push(`- Buyer cash flow after standby: ${c.buyerCashFlow}`);
+  lines.push(`- Cash-on-cash return: ${c.cashOnCashReturn}`);
+  lines.push("");
+  lines.push(`## Max Supportable Purchase Price`);
+  lines.push(`- @ 1.25x DSCR (lender floor): ${c.maxPPAt1_25x}`);
+  lines.push(`- @ 1.50x DSCR (buyer comfort): ${c.maxPPAt1_50x}`);
+  lines.push(`- @ 2.00x DSCR (conservative): ${c.maxPPAt2_00x}`);
+  lines.push(`- Price supported by deal economics? **${c.priceIsSupported ? "YES" : "NO"}**`);
+  lines.push("");
+  lines.push(`## Stress Test`);
+  lines.push(`Stress rating: **${c.stressRating}**. Worst-case DSCR: ${c.worstCaseDscr}. All scenarios pass: ${c.allScenariosPass ? "YES" : "NO"}.`);
+  lines.push("");
+  lines.push(`## Recommended Offer`);
+  lines.push(`- Opening offer: ${c.openingOffer}`);
+  lines.push(`- Target price: ${c.targetPrice}`);
+  lines.push(`- Maximum price: ${c.maximumPrice}`);
+  lines.push(`- Preferred structure: ${c.preferredStructure}`);
+  lines.push(`- Seller note: ${c.sellerNoteAmount}`);
+  lines.push(`- Earnout: ${c.earnoutAmount}`);
+  lines.push(`- Required transition: ${c.requiredTransitionWeeks} weeks`);
+  lines.push("");
+  lines.push(`## Risk`);
+  lines.push(`Risk completeness: ${c.riskCompletenessLabel} (confidence ${c.riskConfidence}). Critical risk factor present: ${c.riskHasCritical ? "YES" : "no"}.`);
+  for (const f of c.riskFactors) {
+    lines.push(`- ${f.label}: ${f.score}/5 (${f.level}) — ${f.rationale}`);
+  }
+  lines.push("");
+  lines.push(`## Anomalies (Engine-Detected)`);
+  if (c.anomalies.length === 0) lines.push("None.");
+  for (const a of c.anomalies) lines.push(`- [${a.severity}] **${a.title}** — ${a.detail}`);
+  lines.push("");
+  lines.push(`## Missing Data`);
+  lines.push(`Critical: ${c.missingCritical.join(", ") || "none"}.`);
+  lines.push(`Important: ${c.missingImportant.join(", ") || "none"}.`);
+  lines.push("");
+  lines.push(`## Working Capital & Integration`);
+  lines.push(`Working capital status: ${c.workingCapitalStatus} (risk ${c.workingCapitalRisk}). Blocks Close Ready: ${c.wcBlocksCloseReady ? "YES" : "no"}.`);
+  lines.push(`Integration readiness: ${c.integrationReadinessScore}/100 (${c.integrationStatus}). 100-day ready: ${c.hundredDayReady ? "YES" : "no"}. Can close safely: ${c.canCloseSafely ? "YES" : "no"}.`);
+  lines.push("");
+  lines.push(`## Data Quality`);
+  lines.push(`${c.dataQualityScore}/100 (${c.dataQualityLabel}). Top gaps: ${c.dataQualityGaps.slice(0, 6).join(", ") || "none"}.`);
+  lines.push("");
+  lines.push(`## Recommendation`);
+  lines.push(`Engine: **${c.verdict}**. Buyer language: **${c.refinedVerdict}**. ${c.isPreliminary ? "DO NOT RELY UNTIL VERIFIED — close diligence gaps before LOI." : ""}`);
+  if (c.refinedVerdictConditions.length) {
+    lines.push(`Conditions: ${c.refinedVerdictConditions.join("; ")}.`);
+  }
+  return lines.join("\n");
+}
+
+function composeLenderSummaryFromContext(c: AdvisorDealContext): string {
+  const out: string[] = [];
+  out.push(`# Lender Summary — ${c.companyName}`);
+  out.push("");
+  out.push(`Industry: ${c.industry}. Revenue: ${c.revenue}. ${c.earningsBasis}: ${c.earnings}. Margin: ${c.ebitdaMargin}.`);
+  out.push(`Purchase price: ${c.purchasePriceUsed} (${c.purchasePriceSource}). EV/${c.earningsBasis}: ${c.earningsBasis === "EBITDA" ? c.multipleEvEbitda : c.multipleEvSde}.`);
+  out.push("");
+  out.push(`## Capital Stack`);
+  out.push(`- SBA: ${c.capitalStack.sba} → DS ${c.capitalStack.sbaAnnualDebtService}`);
+  out.push(`- Seller note: ${c.capitalStack.sellerNote} → DS ${c.capitalStack.sellerNoteAnnualDebtService} (standby ${c.capitalStack.sellerNoteStandby})`);
+  out.push(`- Buyer equity: ${c.capitalStack.buyerEquity}`);
+  out.push(`- Total annual debt service: ${c.capitalStack.totalAnnualDebtService}`);
+  out.push("");
+  out.push(`## DSCR`);
+  out.push(`- During standby: ${c.dscr.duringStandby}`);
+  out.push(`- After standby: **${c.dscr.afterStandby}** (${c.dscr.verdict})`);
+  out.push(`- Buyer cash flow after debt service: ${c.buyerCashFlow}`);
+  out.push("");
+  out.push(`## Stress`);
+  out.push(`Stress rating: ${c.stressRating}. Worst-case DSCR: ${c.worstCaseDscr}. All scenarios pass: ${c.allScenariosPass ? "YES" : "NO"}.`);
+  out.push("");
+  out.push(`## Risk Caveats`);
+  out.push(`Risk completeness: ${c.riskCompletenessLabel} (${c.riskConfidence}).`);
+  if (c.anomalies.length) {
+    out.push("");
+    out.push(`## Anomalies`);
+    for (const a of c.anomalies) out.push(`- [${a.severity}] ${a.title}`);
+  }
+  return out.join("\n");
+}
+
+function composeDiligenceRequestFromContext(c: AdvisorDealContext): string {
+  const out: string[] = [];
+  out.push(`# Diligence Request — ${c.companyName}`);
+  out.push("");
+  if (c.missingCritical.length) {
+    out.push(`## Critical (block IC / Lender / Close)`);
+    for (const m of c.missingCritical) out.push(`- [ ] ${m}`);
+    out.push("");
+  }
+  if (c.missingImportant.length) {
+    out.push(`## Important`);
+    for (const m of c.missingImportant) out.push(`- [ ] ${m}`);
+    out.push("");
+  }
+  if (c.missingNiceToHave.length) {
+    out.push(`## Nice to Have`);
+    for (const m of c.missingNiceToHave) out.push(`- [ ] ${m}`);
+    out.push("");
+  }
+  if (c.anomalies.length) {
+    out.push(`## Anomaly-driven Triggers`);
+    for (const a of c.anomalies) {
+      for (const t of a.diligenceTriggers) out.push(`- [ ] ${t} (from: ${a.title})`);
+    }
+  }
+  return out.join("\n");
+}
+
 export function answerAdvisor(
   question: string,
   portfolio: AdvisorPortfolioContext,
@@ -137,19 +282,45 @@ function answerForFocusedDeal(
       answer = `Use the deterministic broker email export. Engine verdict: ${c.verdict}. Anchor: ${c.benchmarkMedianImpliedValue}.`;
       break;
     case "ic_memo":
+      answer = composeICMemoFromContext(c);
+      bullets.push(
+        `Verdict (engine): **${c.verdict}**${c.isPreliminary ? " (PRELIMINARY)" : ""}`,
+        `Refined verdict (buyer language): **${c.refinedVerdict}** — ${c.refinedVerdictReason}`,
+        `${c.scoreLabel}: ${c.scoreOutOf100}/100 (${c.scoreBucket})`,
+        `DSCR after standby: ${c.dscr.afterStandby} (${c.dscr.verdict})`,
+        `Recommended offer: open ${c.openingOffer} · target ${c.targetPrice} · max ${c.maximumPrice}`,
+        `Data quality: ${c.dataQualityScore}/100 (${c.dataQualityLabel})`,
+      );
+      break;
     case "lender_summary":
+      answer = composeLenderSummaryFromContext(c);
+      bullets.push(
+        `Total annual debt service: ${c.capitalStack.totalAnnualDebtService}`,
+        `DSCR after standby: ${c.dscr.afterStandby}`,
+        `Buyer cash flow after debt service: ${c.buyerCashFlow}`,
+        `Max supportable PP @ 1.25x DSCR: ${c.maxPPAt1_25x}`,
+      );
+      break;
     case "diligence_request":
-      answer = `Use the deterministic export. Engine verdict ${c.verdict}, score ${c.scoreOutOf100}/100.`;
+      answer = composeDiligenceRequestFromContext(c);
+      bullets.push(
+        ...c.missingCritical.slice(0, 5).map((m) => `[critical] ${m}`),
+        ...c.missingImportant.slice(0, 5).map((m) => `[important] ${m}`),
+      );
       break;
     case "challenge_assumptions":
-      answer = `Engine pushback for ${c.companyName}:`;
+      answer = `Engine pushback for ${c.companyName} — pulled from anomalies, caps, and DSCR margins:`;
       bullets.push(
+        ...c.anomalies.map((x) => `[${x.severity}] ${x.title}: ${x.detail}`),
         ...c.capsApplied.map((cap) => `[cap] ${cap}`),
-        c.riskHasCritical ? "Critical risk factor present — review verdict caveats." : "",
+        c.riskHasCritical ? "Critical risk factor present — verdict caveats apply." : "",
         c.dscr.verdict === "Fail" || c.dscr.verdict === "Risky"
           ? `DSCR ${c.dscr.afterStandby} is too thin for a comfortable approval.`
           : "",
       );
+      if (c.anomalies.length === 0) {
+        bullets.push("Engine detected no deal-specific anomalies — assumptions appear internally consistent given the data provided. Re-run after filling missing inputs.");
+      }
       break;
     default:
       answer = `**${c.verdict}**${c.isPreliminary ? " (preliminary)" : ""} — ${c.verdictRationale}`;

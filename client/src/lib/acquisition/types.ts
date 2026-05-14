@@ -144,6 +144,19 @@ export interface DealInput {
 
   // Per-deal recurring revenue / geography signal for thesis fit.
   geography?: string | null;
+
+  /** Asset vs. stock deal — drives tax / 338(h)(10) / liability diligence triggers. */
+  dealStructure?: "asset" | "stock";
+  /** Itemized seller add-backs justifying SDE/EBITDA build-up. */
+  addBackItems?: AddBackItem[];
+}
+
+export interface AddBackItem {
+  label: string;
+  amount: number;
+  category?: "owner_comp" | "one_time" | "non_operating" | "discretionary" | "other";
+  documented?: boolean;
+  rationale?: string;
 }
 
 export interface MetricResult {
@@ -164,6 +177,12 @@ export interface CapitalStackAssumptions {
   sellerNoteTermYears: number;
   sellerNoteStandbyMonths: number;
   buyerEquityPct: number;
+  /** Buyer-side DSCR target (above the lender 1.25x floor). Defaults to 1.50x. */
+  buyerDscrTarget?: number;
+  /** Closing-cost reserve as % of purchase price (legal, QoE, post-close runway). */
+  closingCostsPct?: number;
+  /** Asset vs. stock deal toggle. Affects diligence triggers and tax language. */
+  dealStructureType?: "asset" | "stock";
 }
 
 export interface CapitalStackComponent {
@@ -594,6 +613,10 @@ export interface MaxSupportablePPResult {
   at1_50x: number | null;
   /** Max price at which DSCR after standby ≥ 2.00x */
   at2_00x: number | null;
+  /** Max price at the buyer's chosen DSCR target (defaults to 1.50x if unset). */
+  atBuyerTarget: number | null;
+  /** The buyer DSCR target that drove atBuyerTarget. */
+  buyerDscrTargetUsed: number;
   /** Current asking / purchase price for comparison */
   currentPrice: number | null;
   /** Whether current price is at or below the 1.25x max */
@@ -792,4 +815,22 @@ export interface DealAnalysis {
   autoDiligence: AutoDiligenceResult;
   dataQuality: DataQualityResult;
   assumptionBadges: AssumptionBadge[];
+
+  /**
+   * Engine-detected anomalies the buyer should challenge or verify, e.g.
+   * "Asking is below benchmark low", "Margin is above industry norm",
+   * "Offer inversion: max supportable < asking". Used by Copilot's
+   * "Challenge my assumptions" and by the Red Team objections page.
+   */
+  anomalies: DealAnomaly[];
+}
+
+export type DealAnomalySeverity = "info" | "watch" | "critical";
+
+export interface DealAnomaly {
+  id: string;
+  severity: DealAnomalySeverity;
+  title: string;
+  detail: string;
+  diligenceTriggers: string[];
 }

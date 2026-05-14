@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useDealStore } from "@/lib/acquisition/store";
 import { analyzeDeal, fmtCurrencyExact, fmtMultiple } from "@/lib/acquisition";
-import type { DealAnalysis, DealInput, CapitalStackAssumptions } from "@/lib/acquisition/types";
+import type { DealAnalysis, DealInput, CapitalStackAssumptions, StressScenario as EngineScenario } from "@/lib/acquisition/types";
 import { VerdictPill, DscrPill } from "@/components/acq/Verdict";
 import { ArrowLeft, Calculator, AlertTriangle } from "lucide-react";
 
@@ -35,41 +35,8 @@ function pctText(v: number | null | undefined): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
-interface StressScenario {
-  label: string;
-  description: string;
-  earningsHaircut: number; // 0 = no haircut
-  sbaRateShockBps: number; // basis points to add to SBA rate
-}
-
-const SCENARIOS: StressScenario[] = [
-  { label: "Base", description: "As entered.", earningsHaircut: 0, sbaRateShockBps: 0 },
-  { label: "Earnings −10%", description: "Earnings haircut 10%.", earningsHaircut: 0.1, sbaRateShockBps: 0 },
-  { label: "Earnings −20%", description: "Earnings haircut 20%.", earningsHaircut: 0.2, sbaRateShockBps: 0 },
-  { label: "Earnings −30%", description: "Earnings haircut 30%.", earningsHaircut: 0.3, sbaRateShockBps: 0 },
-  { label: "SBA +200bps", description: "SBA rate +2.00% shock.", earningsHaircut: 0, sbaRateShockBps: 200 },
-  { label: "Combined: −20% / +200bps", description: "Earnings −20% AND SBA rate +2.00%.", earningsHaircut: 0.2, sbaRateShockBps: 200 },
-];
-
-function applyScenario(
-  input: DealInput,
-  assumptions: CapitalStackAssumptions,
-  scenario: StressScenario,
-): { stressedInput: DealInput; stressedAssumptions: CapitalStackAssumptions } {
-  const haircut = 1 - scenario.earningsHaircut;
-  const stressedInput: DealInput = {
-    ...input,
-    annualEBITDA:
-      typeof input.annualEBITDA === "number" ? input.annualEBITDA * haircut : input.annualEBITDA,
-    annualSDE:
-      typeof input.annualSDE === "number" ? input.annualSDE * haircut : input.annualSDE,
-  };
-  const stressedAssumptions: CapitalStackAssumptions = {
-    ...assumptions,
-    sbaInterestRate: assumptions.sbaInterestRate + scenario.sbaRateShockBps / 10_000,
-  };
-  return { stressedInput, stressedAssumptions };
-}
+// Stress scenarios are owned by the engine (buyerAdvisory.computeStressTest)
+// so the Analyzer and Underwriting always show the SAME set of scenarios.
 
 function dscrFlag(value: number | null): { label: string; tone: "ok" | "warn" | "bad" | "n/a" } {
   if (value === null || !Number.isFinite(value)) return { label: "N/A", tone: "n/a" };
@@ -79,26 +46,9 @@ function dscrFlag(value: number | null): { label: string; tone: "ok" | "warn" | 
   return { label: "Fail", tone: "bad" };
 }
 
-function ScenarioRow({
-  scenario,
-  baseline,
-  result,
-}: {
-  scenario: StressScenario;
-  baseline: DealAnalysis;
-  result: DealAnalysis;
-}) {
-  const during = result.dscrPair.duringStandby.value;
-  const after = result.dscrPair.afterStandby.value;
-  const baseAfter = baseline.dscrPair.afterStandby.value;
-  const broke: string[] = [];
-  if (after !== null && baseAfter !== null) {
-    if (after < 1.25 && baseAfter >= 1.25)
-      broke.push("DSCR fell below 1.25x (lender minimum) under this stress.");
-  }
-  if (during !== null && during < 1.25)
-    broke.push("DSCR during seller-note standby is below 1.25x — debt service exceeds buffer.");
-  if (after !== null && after < 1.0) broke.push("DSCR is below 1.0x — earnings cannot cover debt service.");
+function ScenarioRow({ scenario }: { scenario: EngineScenario }) {
+  const during = scenario.dscrDuringStandby.value;
+  const after = scenario.dscrAfterStandby.value;
   const tone = dscrFlag(after);
   return (
     <tr className="border-t border-border/60 align-top">
@@ -106,15 +56,15 @@ function ScenarioRow({
         <div className="font-semibold">{scenario.label}</div>
         <div className="text-xs text-muted-foreground">{scenario.description}</div>
       </td>
-      <td className="py-3 pr-4 font-mono text-sm">{result.dscrPair.duringStandby.display}</td>
-      <td className="py-3 pr-4 font-mono text-sm">{result.dscrPair.afterStandby.display}</td>
+      <td className="py-3 pr-4 font-mono text-sm">{scenario.dscrDuringStandby.display}</td>
+      <td className="py-3 pr-4 font-mono text-sm">{scenario.dscrAfterStandby.display}</td>
       <td className="py-3 pr-4">
         <Badge variant={tone.tone === "ok" ? "default" : tone.tone === "warn" ? "secondary" : "destructive"}>
-          {tone.label}
+          {scenario.pass ? "Pass" : "Fail"}
         </Badge>
       </td>
       <td className="py-3 pr-4 text-xs text-muted-foreground">
-        {broke.length > 0 ? broke.join(" ") : "DSCR still clears the lender threshold."}
+        {scenario.failReason ? scenario.failReason : "DSCR still clears the lender threshold."}
       </td>
     </tr>
   );
@@ -140,14 +90,8 @@ export default function Underwriting() {
     [selectedDeal, assumptions],
   );
 
-  // Stress test — every scenario re-runs analyzeDeal so DSCR uses the same engine.
-  const stress = useMemo(() => {
-    if (!selectedDeal || !analysis) return [] as Array<{ s: StressScenario; r: DealAnalysis }>;
-    return SCENARIOS.map((s) => {
-      const { stressedInput, stressedAssumptions } = applyScenario(selectedDeal, assumptions, s);
-      return { s, r: analyzeDeal(stressedInput, stressedAssumptions) };
-    });
-  }, [selectedDeal, assumptions, analysis]);
+  // Stress test — use the SAME engine output as Deal Analyzer to guarantee parity.
+  const stress = analysis?.stressTest.scenarios ?? [];
 
   // Optional scenario valuation — explicitly labelled, NEVER overrides PP.
   const [scenarioMultiple, setScenarioMultiple] = useState<number>(3.5);
@@ -415,8 +359,8 @@ export default function Underwriting() {
                   </tr>
                 </thead>
                 <tbody>
-                  {stress.map(({ s, r }) => (
-                    <ScenarioRow key={s.label} scenario={s} baseline={analysis} result={r} />
+                  {stress.map((s) => (
+                    <ScenarioRow key={s.label} scenario={s} />
                   ))}
                 </tbody>
               </table>

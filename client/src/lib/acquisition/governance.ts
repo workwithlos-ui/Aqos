@@ -452,6 +452,33 @@ export function computeRedTeam(analysis: DealAnalysis): RedTeamResult {
     cleared: marginVal !== null && marginVal >= 0.08,
   });
 
+  // 6+. Promote engine-detected anomalies into deal-specific objections.
+  for (const anom of analysis.anomalies ?? []) {
+    const sev: "critical" | "high" | "medium" | "low" =
+      anom.severity === "critical"
+        ? "critical"
+        : anom.severity === "watch"
+          ? "high"
+          : "medium";
+    objections.push({
+      key: `anomaly_${anom.id}`,
+      prompt: anom.title,
+      finding: anom.detail,
+      evidenceNeeded: anom.diligenceTriggers ?? [],
+      severity: sev,
+      owner: "Diligence Lead",
+      status: "open",
+      cleared: false,
+    });
+  }
+
+  // Sort: critical → high → medium → low; cleared items sink.
+  const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  objections.sort((a, b) => {
+    if (a.cleared !== b.cleared) return a.cleared ? 1 : -1;
+    return (order[a.severity] ?? 99) - (order[b.severity] ?? 99);
+  });
+
   const unresolvedCritical = objections.filter(
     (o) => o.severity === "critical" && !o.cleared,
   ).length;

@@ -23,6 +23,7 @@ export const DEFAULT_ASSUMPTIONS: CapitalStackAssumptions = {
   sellerNoteTermYears: 5,
   sellerNoteStandbyMonths: 24,
   buyerEquityPct: 0.1,
+  buyerDscrTarget: 1.5,
 };
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────

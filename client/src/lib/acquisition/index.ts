@@ -34,6 +34,7 @@ import {
   computeAutoDiligence,
   computeDataQuality,
   computeAssumptionBadges,
+  computeAnomalies,
 } from "./buyerAdvisory";
 import type {
   BuyBox,
@@ -294,13 +295,14 @@ export function analyzeDeal(
       cashOnCashReturn: { value: null, display: "pending", status: "missing", formula: "", inputs: {} },
       warnings: [],
     },
-    maxSupportablePP: { at1_25x: null, at1_50x: null, at2_00x: null, currentPrice: null, priceIsSupported: false, warnings: [] },
+    maxSupportablePP: { at1_25x: null, at1_50x: null, at2_00x: null, atBuyerTarget: null, buyerDscrTargetUsed: assumptions.buyerDscrTarget ?? 1.5, currentPrice: null, priceIsSupported: false, warnings: [] },
     stressTest: { scenarios: [], worstCaseDscr: null, allScenariosPass: false, anyScenariosPass: false, stressRating: "missing", warnings: [] },
     refinedVerdict: { verdict: "Pursue with Conditions", buyerReason: "", conditions: [], urgency: "medium" },
     recommendedOffer: { openingOffer: null, targetPrice: null, maximumPrice: null, preferredStructure: "", sellerNoteAmount: null, earnoutAmount: null, earnoutTrigger: null, requiredTransitionWeeks: 12, rationale: "", warnings: [] },
     autoDiligence: { items: [], criticalCount: 0, importantCount: 0, receivedCount: 0, completionPct: 0, readyForLOI: false, readyForLender: false, warnings: [] },
     dataQuality: { score: 0, label: "Very Low", fieldsProvided: 0, fieldsTotal: 0, criticalGaps: [], importantGaps: [], rationale: "" },
     assumptionBadges: [],
+    anomalies: [],
   };
 
   const scoreResult = scoreDeal({ input, analysis: partial });
@@ -348,6 +350,7 @@ export function analyzeDeal(
   partial.autoDiligence = computeAutoDiligence(input, partial);
   partial.dataQuality = computeDataQuality(input, partial);
   partial.assumptionBadges = computeAssumptionBadges(input, partial);
+  partial.anomalies = computeAnomalies(input, partial);
 
   return partial;
 }
@@ -486,6 +489,13 @@ function resolveFinalBucket(
     return {
       finalBucket: "Cannot Underwrite",
       finalBucketReason: `Cannot underwrite: ${a.missingData.criticalMissing.join(", ") || "core inputs missing"}.`,
+    };
+  }
+  // 1b) Invalid capital stack (e.g. 105% allocation) cannot produce a normal verdict.
+  if (!a.capitalStack.pctValid) {
+    return {
+      finalBucket: "Cannot Underwrite",
+      finalBucketReason: `Capital stack is invalid ( ${(a.capitalStack.pctTotal * 100).toFixed(0)}% allocated ). Fix the SBA / seller-note / equity split before scoring.`,
     };
   }
   if (a.score.status === "review_required") {

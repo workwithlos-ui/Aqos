@@ -13,6 +13,8 @@ import { DEMO_DEALS, REQUIRED_TEST_CASES } from "./seedDeals";
 const DEALS_KEY = "acq-os.deals.v2";
 const ASSUMP_KEY = "acq-os.assumptions.v2";
 const INIT_KEY = "acq-os.initialized.v2";
+const ACTIVE_DEAL_KEY = "acq-os.activeDealId.v2";
+const SAVED_AT_KEY = "acq-os.lastSavedAt.v2";
 
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
@@ -31,6 +33,7 @@ function loadDealsFromStorage(): DealInput[] {
 function saveDealsToStorage(deals: DealInput[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(DEALS_KEY, JSON.stringify(deals));
+  localStorage.setItem(SAVED_AT_KEY, String(Date.now()));
 }
 
 function loadAssumptionsFromStorage(): CapitalStackAssumptions {
@@ -44,6 +47,24 @@ function loadAssumptionsFromStorage(): CapitalStackAssumptions {
 function saveAssumptionsToStorage(a: CapitalStackAssumptions) {
   if (typeof window === "undefined") return;
   localStorage.setItem(ASSUMP_KEY, JSON.stringify(a));
+  localStorage.setItem(SAVED_AT_KEY, String(Date.now()));
+}
+
+function loadActiveDealId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(ACTIVE_DEAL_KEY);
+}
+
+function saveActiveDealId(id: string | null) {
+  if (typeof window === "undefined") return;
+  if (id === null) localStorage.removeItem(ACTIVE_DEAL_KEY);
+  else localStorage.setItem(ACTIVE_DEAL_KEY, id);
+}
+
+function loadLastSavedAt(): number | null {
+  if (typeof window === "undefined") return null;
+  const v = localStorage.getItem(SAVED_AT_KEY);
+  return v ? Number(v) : null;
 }
 
 function ensureSeeded(): DealInput[] {
@@ -66,11 +87,15 @@ export function useDealStore() {
   const [assumptions, setAssumptionsState] = useState<CapitalStackAssumptions>(
     () => loadAssumptionsFromStorage(),
   );
+  const [activeDealId, setActiveDealIdState] = useState<string | null>(() => loadActiveDealId());
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(() => loadLastSavedAt());
 
   useEffect(() => {
     const fn = () => {
       setDeals(loadDealsFromStorage());
       setAssumptionsState(loadAssumptionsFromStorage());
+      setActiveDealIdState(loadActiveDealId());
+      setLastSavedAt(loadLastSavedAt());
     };
     subscribers.add(fn);
     return () => {
@@ -80,11 +105,11 @@ export function useDealStore() {
 
   const upsertDeal = useCallback((deal: DealInput) => {
     setDeals((curr) => {
-      const next = deal.id
-        ? curr.some((d) => d.id === deal.id)
-          ? curr.map((d) => (d.id === deal.id ? { ...d, ...deal } : d))
-          : [...curr, deal]
-        : [...curr, { ...deal, id: `deal-${Date.now()}` }];
+      const id = deal.id ?? `deal-${Date.now()}`;
+      const dealWithId = { ...deal, id };
+      const next = curr.some((d) => d.id === id)
+        ? curr.map((d) => (d.id === id ? { ...d, ...dealWithId } : d))
+        : [...curr, dealWithId];
       saveDealsToStorage(next);
       notify();
       return next;
@@ -95,6 +120,8 @@ export function useDealStore() {
     setDeals((curr) => {
       const next = curr.filter((d) => d.id !== id);
       saveDealsToStorage(next);
+      // Clear active selection if it was removed.
+      if (loadActiveDealId() === id) saveActiveDealId(null);
       notify();
       return next;
     });
@@ -119,12 +146,30 @@ export function useDealStore() {
     notify();
   }, []);
 
+  const setActiveDealId = useCallback((id: string | null) => {
+    saveActiveDealId(id);
+    setActiveDealIdState(id);
+    notify();
+  }, []);
+
   const liveDeals = useMemo(
     () => deals.filter((d) => !d.isDemo && !d.isTest),
     [deals],
   );
   const demoDeals = useMemo(() => deals.filter((d) => d.isDemo), [deals]);
   const testDeals = useMemo(() => deals.filter((d) => d.isTest), [deals]);
+
+  // Resolve the active deal: explicit selection if present and still in store,
+  // else first live deal, else first demo deal, else first deal.
+  const activeDeal = useMemo<DealInput | null>(() => {
+    if (activeDealId) {
+      const found = deals.find((d) => d.id === activeDealId);
+      if (found) return found;
+    }
+    if (liveDeals[0]) return liveDeals[0];
+    if (demoDeals[0]) return demoDeals[0];
+    return deals[0] ?? null;
+  }, [activeDealId, deals, liveDeals, demoDeals]);
 
   return {
     deals,
@@ -137,5 +182,9 @@ export function useDealStore() {
     setAssumptions,
     resetAssumptions,
     resetSeed,
+    activeDealId,
+    setActiveDealId,
+    activeDeal,
+    lastSavedAt,
   };
 }

@@ -228,11 +228,103 @@ export default function DealAnalyzer() {
               <Label className="text-xs">Location</Label>
               <Input value={form.location ?? ""} onChange={(e) => update("location", e.target.value || null)} />
             </div>
+            <div>
+              <Label className="text-xs">Deal structure</Label>
+              <Select
+                value={(form.dealStructure as string) ?? "asset"}
+                onValueChange={(v) => update("dealStructure", v as "asset" | "stock")}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="asset">Asset purchase (typical SBA)</SelectItem>
+                  <SelectItem value="stock">Stock purchase</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="col-span-2">
               <Label className="text-xs">Notes</Label>
               <Textarea rows={2} value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value || null)} />
             </div>
           </div>
+
+          <details className="rounded border border-border bg-muted/30 px-3 py-2">
+            <summary className="text-sm font-semibold cursor-pointer">
+              Itemized add-backs ({(form.addBackItems ?? []).length})
+            </summary>
+            <div className="space-y-2 pt-2">
+              {(form.addBackItems ?? []).map((it, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                  <Input
+                    className="col-span-5"
+                    placeholder="e.g. Owner salary, one-time legal"
+                    value={it.label}
+                    onChange={(e) => {
+                      const next = [...(form.addBackItems ?? [])];
+                      next[i] = { ...next[i], label: e.target.value };
+                      update("addBackItems", next);
+                    }}
+                  />
+                  <Input
+                    className="col-span-3"
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="$"
+                    value={it.amount}
+                    onChange={(e) => {
+                      const next = [...(form.addBackItems ?? [])];
+                      next[i] = { ...next[i], amount: Number(e.target.value) || 0 };
+                      update("addBackItems", next);
+                    }}
+                  />
+                  <Select
+                    value={it.category ?? "other"}
+                    onValueChange={(v) => {
+                      const next = [...(form.addBackItems ?? [])];
+                      next[i] = { ...next[i], category: v as never };
+                      update("addBackItems", next);
+                    }}
+                  >
+                    <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="owner_comp">Owner comp</SelectItem>
+                      <SelectItem value="one_time">One-time</SelectItem>
+                      <SelectItem value="non_operating">Non-operating</SelectItem>
+                      <SelectItem value="discretionary">Discretionary</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <button
+                    type="button"
+                    className="col-span-1 text-xs text-destructive hover:underline"
+                    onClick={() => {
+                      const next = (form.addBackItems ?? []).filter((_, j) => j !== i);
+                      update("addBackItems", next);
+                    }}
+                  >
+                    remove
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="text-xs underline text-primary"
+                onClick={() => {
+                  const next = [...(form.addBackItems ?? []), { label: "", amount: 0, category: "owner_comp" as const }];
+                  update("addBackItems", next);
+                }}
+              >
+                + Add line item
+              </button>
+              {(form.addBackItems ?? []).length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Total documented add-backs:{" "}
+                  <span className="font-mono">
+                    ${(form.addBackItems ?? []).reduce((s, it) => s + (Number(it.amount) || 0), 0).toLocaleString()}
+                  </span>
+                </p>
+              )}
+            </div>
+          </details>
 
           <div>
             <h3 className="text-sm font-semibold mt-3 mb-2">Diligence checklist</h3>

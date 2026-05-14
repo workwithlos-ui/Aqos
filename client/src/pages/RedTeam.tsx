@@ -1,53 +1,40 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useDealStore } from "@/lib/acquisition/store";
 import { analyzeDeal } from "@/lib/acquisition";
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
+import { ActiveDealPicker } from "@/components/acq/ActiveDealPicker";
 
 export default function RedTeamPage() {
-  const { deals, assumptions } = useDealStore();
-  const currentDeal = deals[0];
-  const [selectedDealId, setSelectedDealId] = useState(currentDeal?.id);
+  const { deals, assumptions, activeDealId } = useDealStore();
+  const dealId = activeDealId ?? deals[0]?.id ?? "";
+  const deal = useMemo(() => deals.find((d) => d.id === dealId) ?? null, [deals, dealId]);
+  const analysis = useMemo(() => (deal ? analyzeDeal(deal, assumptions) : null), [deal, assumptions]);
 
-  const analysis = useMemo(() => {
-    const deal = deals.find((d) => d.id === selectedDealId) ?? deals[0];
-    return deal ? analyzeDeal(deal, assumptions) : null;
-  }, [selectedDealId, deals, assumptions]);
-
-  if (!analysis) {
-    return <div className="text-muted-foreground">No deal selected.</div>;
+  if (!analysis || !deal) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-bold">Red Team Objections</h1>
+          <p className="text-muted-foreground mt-2">No deal selected.</p>
+        </div>
+        <ActiveDealPicker className="max-w-sm" />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-display font-bold">Red Team Objections</h1>
-        <p className="text-muted-foreground mt-2">
-          What could destroy value? What would a lender reject? What assumptions are most fragile?
-        </p>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-display font-bold">Red Team Objections</h1>
+          <p className="text-muted-foreground mt-2">
+            Deal-specific objections derived from <span className="font-mono">{deal.companyName?.trim() || "Untitled deal"}</span>'s verified DealAnalysis.
+          </p>
+        </div>
+        <ActiveDealPicker className="min-w-[220px]" />
       </div>
-
-      {/* Deal Selector */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Select Deal</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <select
-            className="w-full px-2 py-1 border rounded"
-            value={selectedDealId ?? ""}
-            onChange={(e) => setSelectedDealId(e.target.value)}
-          >
-            {deals.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.companyName}
-              </option>
-            ))}
-          </select>
-        </CardContent>
-      </Card>
 
       {/* Summary */}
       <Card>
@@ -149,11 +136,6 @@ export default function RedTeamPage() {
           )}
         </CardContent>
       </Card>
-
-      <div className="flex justify-end gap-2">
-        <Button variant="outline">Export Red Team Report</Button>
-        <Button>Refresh Analysis</Button>
-      </div>
     </div>
   );
 }

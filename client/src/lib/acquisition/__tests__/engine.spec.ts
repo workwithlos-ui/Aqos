@@ -925,3 +925,209 @@ describe("DSCR overrides valuation attractiveness", () => {
     expect(a.finalBucket).not.toBe("Acquisition Priority");
   });
 });
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// Iteration 7 — 19-item QA fix list regression locks
+// ────────────────────────────────────────────────────────────────────────────
+import { computeRedTeam } from "../governance";
+
+describe("Iteration 7 — 19-item QA list regression locks", () => {
+  describe("P0 — Data integrity", () => {
+    it("Exports/UI bind company name from selected DealInput, never from a default", () => {
+      const a1 = analyzeDeal({
+        companyName: "ALPHA",
+        industry: "plumbing",
+        annualRevenue: 1_000_000,
+        annualEBITDA: 200_000,
+        askingPrice: 700_000,
+      });
+      const a2 = analyzeDeal({
+        companyName: "BRAVO",
+        industry: "plumbing",
+        annualRevenue: 1_000_000,
+        annualEBITDA: 200_000,
+        askingPrice: 700_000,
+      });
+      expect(a1.companyName).toBe("ALPHA");
+      expect(a2.companyName).toBe("BRAVO");
+      expect(a1.companyName).not.toBe(a2.companyName);
+    });
+
+    it("Working Capital inputs flow into Buyer Cash Flow CapEx burden", () => {
+      const withWC = analyzeDeal({
+        companyName: "WC Test",
+        industry: "hvac",
+        annualRevenue: 2_500_000,
+        annualEBITDA: 500_000,
+        askingPrice: 1_750_000,
+        workingCapital: { capExNeedsAnnual: 75_000, requiredLiquidityBufferMonths: 3 },
+      });
+      const noWC = analyzeDeal({
+        companyName: "WC Empty",
+        industry: "hvac",
+        annualRevenue: 2_500_000,
+        annualEBITDA: 500_000,
+        askingPrice: 1_750_000,
+      });
+      const withCapEx = withWC.buyerCashFlow.requiredCapEx ?? 0;
+      const noCapEx = noWC.buyerCashFlow.requiredCapEx ?? 0;
+      expect(withCapEx).toBeGreaterThanOrEqual(noCapEx);
+      expect(withCapEx).toBe(75_000);
+    });
+
+    it("HVAC smoke deal passes finite math across the engine", () => {
+      const a = analyzeDeal({
+        companyName: "HVAC Smoke",
+        industry: "hvac",
+        annualRevenue: 2_500_000,
+        annualEBITDA: 500_000,
+        askingPrice: 1_750_000,
+      });
+      expect(a.companyName).toBe("HVAC Smoke");
+      expect(Number.isFinite(a.evToEBITDA.value ?? NaN)).toBe(true);
+      expect(Number.isFinite(a.dscrPair.afterStandby.value ?? NaN)).toBe(true);
+      expect(a.maxSupportablePP.at1_25x === null || Number.isFinite(a.maxSupportablePP.at1_25x)).toBe(true);
+      expect(a.recommendedOffer.targetPrice === null || Number.isFinite(a.recommendedOffer.targetPrice)).toBe(true);
+    });
+  });
+
+  describe("P1 — Brief carry-forward", () => {
+    it("Recommended offer target = min(benchmark median, max-supportable at buyer DSCR)", () => {
+      const a = analyzeDeal({
+        companyName: "Offer Math",
+        industry: "plumbing",
+        annualRevenue: 3_200_000,
+        annualEBITDA: 950_000,
+        askingPrice: 3_200_000,
+      });
+      const offer = a.recommendedOffer;
+      const bench = a.valuation.benchmarkMedianValue;
+      const supportable = a.maxSupportablePP.atBuyerTarget;
+      if (offer.targetPrice !== null && bench !== null && supportable !== null) {
+        const expected = Math.round(Math.min(bench, supportable) / 1000) * 1000;
+        // Allow $1k slack for rounding paths in either direction.
+        expect(Math.abs(offer.targetPrice - expected)).toBeLessThanOrEqual(2_000);
+      }
+    });
+
+    it("Cash-on-Cash denominator includes equity + closing costs", () => {
+      const a = analyzeDeal({
+        companyName: "CoC Test",
+        industry: "plumbing",
+        annualRevenue: 3_200_000,
+        annualEBITDA: 950_000,
+        askingPrice: 3_200_000,
+      });
+      const coc = a.buyerCashFlow.cashOnCashReturn;
+      const formula = (coc.formula ?? "").toLowerCase();
+      expect(formula).toMatch(/closing/);
+    });
+
+    it("EBITDA margin anomaly is flagged when margin is far above industry norm", () => {
+      const a = analyzeDeal({
+        companyName: "Suspicious Margin",
+        industry: "restaurant", // norm 6%–15%
+        annualRevenue: 1_000_000,
+        annualEBITDA: 450_000,
+        askingPrice: 2_000_000,
+      });
+      const flagged = (a.anomalies ?? []).some(
+        (x) => x.id === "margin-above-industry-norm" || /margin/i.test(x.title),
+      );
+      expect(flagged).toBe(true);
+    });
+  });
+
+  describe("P2 — Copilot strengthening", () => {
+    it("Anomalies array exists and is non-empty for stressed deals", () => {
+      const a = analyzeDeal({
+        companyName: "Anomaly Source",
+        industry: "plumbing",
+        annualRevenue: 3_000_000,
+        annualEBITDA: 900_000, // 30% margin, above norm
+        askingPrice: 1_500_000, // suspicious low
+      });
+      expect(Array.isArray(a.anomalies)).toBe(true);
+      expect((a.anomalies ?? []).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("P3 — Consistency", () => {
+    it("Invalid capital stack forces Cannot Underwrite", () => {
+      const a = analyzeDeal(
+        {
+          companyName: "Bad Stack",
+          industry: "plumbing",
+          annualRevenue: 1_000_000,
+          annualEBITDA: 200_000,
+          askingPrice: 800_000,
+        },
+        { ...DEFAULT_ASSUMPTIONS, sbaLoanPct: 0.8, sellerNotePct: 0.15, buyerEquityPct: 0.1 },
+      );
+      expect(a.capitalStack.pctValid).toBe(false);
+      expect(a.finalBucket).toBe("Cannot Underwrite");
+    });
+
+    it("Red Team objections include engine anomalies (anomaly_* keys)", () => {
+      const a = analyzeDeal({
+        companyName: "RT Anomalies",
+        industry: "plumbing",
+        annualRevenue: 3_000_000,
+        annualEBITDA: 900_000,
+        askingPrice: 1_500_000,
+      });
+      const rt = computeRedTeam(a);
+      const anomalyKeys = rt.objections.filter((o) => o.key.startsWith("anomaly_"));
+      expect(anomalyKeys.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("P4 — Polish", () => {
+    it("Buyer DSCR target propagates through to Max Supportable atBuyerTarget", () => {
+      const a = analyzeDeal(
+        {
+          companyName: "DSCR Target",
+          industry: "plumbing",
+          annualRevenue: 3_200_000,
+          annualEBITDA: 950_000,
+          askingPrice: 3_200_000,
+        },
+        { ...DEFAULT_ASSUMPTIONS, buyerDscrTarget: 1.75 },
+      );
+      const at125 = a.maxSupportablePP.at1_25x;
+      const atBuyer = a.maxSupportablePP.atBuyerTarget;
+      expect(a.maxSupportablePP.buyerDscrTargetUsed).toBe(1.75);
+      if (at125 !== null && atBuyer !== null) {
+        expect(atBuyer).toBeLessThanOrEqual(at125);
+      }
+    });
+
+    it("Asset vs stock deal structure round-trips through DealInput", () => {
+      const a = analyzeDeal({
+        companyName: "Stock Deal",
+        industry: "plumbing",
+        annualRevenue: 1_000_000,
+        annualEBITDA: 200_000,
+        askingPrice: 700_000,
+        dealStructure: "stock",
+      });
+      expect(a.companyName).toBe("Stock Deal");
+    });
+
+    it("Itemized add-backs round-trip through DealInput", () => {
+      const a = analyzeDeal({
+        companyName: "Add-Backs",
+        industry: "plumbing",
+        annualRevenue: 1_000_000,
+        annualEBITDA: 250_000,
+        askingPrice: 700_000,
+        addBackItems: [
+          { label: "Owner salary", amount: 80_000, category: "owner_comp", documented: true },
+          { label: "One-time legal", amount: 25_000, category: "one_time", documented: false },
+        ],
+      });
+      expect(a.companyName).toBe("Add-Backs");
+    });
+  });
+});

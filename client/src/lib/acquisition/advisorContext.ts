@@ -151,6 +151,9 @@ export interface AdvisorDealContext {
   dataQualityScore: number;
   dataQualityLabel: string;
   dataQualityGaps: string[];
+
+  /** Engine-detected anomalies (asking-below-benchmark, margin-vs-norm, offer inversion, DSCR thin/fail, WC missing, customer concentration unknown). Used by Copilot challenge_assumptions and Red Team page. */
+  anomalies: Array<{ id: string; severity: "info" | "watch" | "critical"; title: string; detail: string; diligenceTriggers: string[] }>;
 }
 
 export interface AdvisorPortfolioContext {
@@ -336,6 +339,13 @@ export function buildAdvisorDealContext(a: DealAnalysis): AdvisorDealContext {
     dataQualityScore: a.dataQuality.score,
     dataQualityLabel: a.dataQuality.label,
     dataQualityGaps: [...a.dataQuality.criticalGaps, ...a.dataQuality.importantGaps],
+    anomalies: (a.anomalies ?? []).map((x) => ({
+      id: x.id,
+      severity: x.severity,
+      title: x.title,
+      detail: x.detail,
+      diligenceTriggers: x.diligenceTriggers,
+    })),
   };
 }
 
