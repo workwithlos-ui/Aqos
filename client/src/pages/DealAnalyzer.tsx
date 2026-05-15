@@ -20,6 +20,7 @@ import PEReturnsCard from "@/components/acq/PEReturnsCard";
 import { getIndustryDefault } from "@/lib/acquisition/industryDefaults";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, Save, Trash2, TrendingDown, CheckCircle2, XCircle, Info } from "lucide-react";
+import { CommentThread } from "@/components/acq/CommentThread";
 
 const EMPTY: DealInput = {
   companyName: "",
@@ -1013,6 +1014,11 @@ export default function DealAnalyzer() {
                 <Button className="mt-4 w-full">Open exports</Button>
               </Link>
             </div>
+          </div>
+
+          {/* ── Comments Thread ────────────────────────────────────────── */}
+          <div className="panel p-6">
+            <CommentThread dealId={params.id ?? ""} />
           </div>
         </section>
       </div>

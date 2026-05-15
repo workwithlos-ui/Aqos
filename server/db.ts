@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   AuditDiffEntry,
@@ -305,4 +305,229 @@ export async function getOrgRow(orgId: number) {
   const { orgs } = await import("../drizzle/schema");
   const rows = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
   return rows[0];
+}
+
+// ---------------------------------------------------------------------------
+// COMMENTS — CRUD + soft delete + 15-min edit window + @mention extraction
+// ---------------------------------------------------------------------------
+
+export async function createComment(insert: {
+  dealId: string;
+  orgId: number;
+  authorOpenId: string;
+  body: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { comments } = await import("../drizzle/schema");
+  const result = await db.insert(comments).values(insert);
+  const id = result[0].insertId;
+  return db.select().from(comments).where(eq(comments.id, Number(id))).limit(1);
+}
+
+export async function getCommentById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { comments } = await import("../drizzle/schema");
+  const rows = await db.select().from(comments).where(eq(comments.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function listCommentsForDeal(dealId: string, orgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { comments } = await import("../drizzle/schema");
+  return db
+    .select()
+    .from(comments)
+    .where(and(eq(comments.dealId, dealId), eq(comments.orgId, orgId), isNull(comments.deletedAt)))
+    .orderBy(asc(comments.createdAt));
+}
+
+export async function updateCommentBody(id: number, body: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { comments } = await import("../drizzle/schema");
+  const existing = await getCommentById(id);
+  if (!existing) throw new Error("Comment not found");
+  await db.update(comments).set({ body, updatedAt: new Date() }).where(eq(comments.id, id));
+  return getCommentById(id);
+}
+
+export async function softDeleteComment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { comments } = await import("../drizzle/schema");
+  await db.update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, id));
+}
+
+export async function resolveComment(id: number, resolvedByOpenId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { comments } = await import("../drizzle/schema");
+  await db
+    .update(comments)
+    .set({ resolvedAt: new Date(), resolvedByOpenId })
+    .where(eq(comments.id, id));
+  return getCommentById(id);
+}
+
+export async function unresolveComment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { comments } = await import("../drizzle/schema");
+  await db.update(comments).set({ resolvedAt: null, resolvedByOpenId: null }).where(eq(comments.id, id));
+  return getCommentById(id);
+}
+
+/**
+ * Extract @mentions from markdown body. Returns array of openIds mentioned.
+ * Pattern: @openId (alphanumeric + hyphens, case-insensitive for matching but preserve original case).
+ */
+export function extractMentions(body: string): string[] {
+  const mentions = new Set<string>();
+  const pattern = /@([a-zA-Z0-9_-]+)/g;
+  let match;
+  while ((match = pattern.exec(body)) !== null) {
+    mentions.add(match[1]);
+  }
+  return Array.from(mentions);
+}
+
+/**
+ * Check if a comment can be edited by the actor. Must be within 15 minutes of creation.
+ */
+export function canEditComment(comment: { createdAt: Date }, nowMs: number): boolean {
+  const createdMs = comment.createdAt.getTime();
+  const elapsedMs = nowMs - createdMs;
+  const fifteenMinutesMs = 15 * 60 * 1000;
+  return elapsedMs <= fifteenMinutesMs;
+}
+
+// ---------------------------------------------------------------------------
+// NOTIFICATIONS — In-app bell
+// ---------------------------------------------------------------------------
+
+export async function createNotification(insert: {
+  recipientOpenId: string;
+  orgId: number;
+  commentId: number;
+  dealId: string;
+  type: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { notifications } = await import("../drizzle/schema");
+  await db.insert(notifications).values(insert);
+}
+
+export async function listNotificationsForUser(recipientOpenId: string, orgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { notifications } = await import("../drizzle/schema");
+  return db
+    .select()
+    .from(notifications)
+    .where(and(eq(notifications.recipientOpenId, recipientOpenId), eq(notifications.orgId, orgId)))
+    .orderBy(desc(notifications.createdAt));
+}
+
+export async function getUnreadNotificationCount(recipientOpenId: string, orgId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const { notifications } = await import("../drizzle/schema");
+  const result = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.recipientOpenId, recipientOpenId),
+        eq(notifications.orgId, orgId),
+        isNull(notifications.readAt),
+      ),
+    );
+  return result[0]?.count ?? 0;
+}
+
+export async function markNotificationAsRead(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { notifications } = await import("../drizzle/schema");
+  await db.update(notifications).set({ readAt: new Date() }).where(eq(notifications.id, id));
+}
+
+export async function markAllNotificationsAsRead(recipientOpenId: string, orgId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { notifications } = await import("../drizzle/schema");
+  await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(
+      and(
+        eq(notifications.recipientOpenId, recipientOpenId),
+        eq(notifications.orgId, orgId),
+        isNull(notifications.readAt),
+      ),
+    );
+}
+
+
+export async function setCommentBlocker(id: number, isBlocker: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { comments } = await import("../drizzle/schema");
+  await db.update(comments).set({ isBlocker: isBlocker ? 1 : 0 }).where(eq(comments.id, id));
+  return getCommentById(id);
+}
+
+export async function hasUnresolvedBlockers(dealId: string, orgId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const { comments } = await import("../drizzle/schema");
+  const rows = await db
+    .select()
+    .from(comments)
+    .where(
+      and(
+        eq(comments.dealId, dealId),
+        eq(comments.orgId, orgId),
+        eq(comments.isBlocker, 1),
+        isNull(comments.resolvedAt),
+        isNull(comments.deletedAt),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+
+export async function getDealWithBlockerStatus(dealId: string, orgId: number) {
+  const deal = await getDealByDealId(orgId, dealId);
+  if (!deal) return null;
+  const blockerStatus = await hasUnresolvedBlockers(dealId, orgId);
+  return { ...deal, hasUnresolvedBlockers: blockerStatus };
+}
+
+
+// ---------------------------------------------------------------------------
+// AUDIT ENTITY-FILTER HELPER
+// ---------------------------------------------------------------------------
+
+export async function listAuditEntriesByEntity(
+  orgId: number,
+  entityType: string,
+  entityId: string | undefined,
+  limit = 100,
+) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [eq(auditLog.orgId, orgId), eq(auditLog.targetType, entityType)];
+  if (entityId) conds.push(eq(auditLog.targetId, entityId));
+  return db
+    .select()
+    .from(auditLog)
+    .where(and(...conds))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(limit);
 }

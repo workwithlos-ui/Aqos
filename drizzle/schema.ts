@@ -123,7 +123,13 @@ export type AuditAction =
   | "assumptions.reset"
   | "seed.reset"
   | "active_deal.set"
-  | "migration.import";
+  | "migration.import"
+  | "comment.create"
+  | "comment.update"
+  | "comment.delete"
+  | "comment.resolve"
+  | "comment.unresolve"
+  | "comment.set_blocker";
 
 export type AuditDiffEntry = {
   field: string;
@@ -178,3 +184,68 @@ export const orgSettings = mysqlTable("org_settings", {
 
 export type OrgSettings = typeof orgSettings.$inferSelect;
 export type InsertOrgSettings = typeof orgSettings.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// COMMENTS — Per-deal flat threads. Soft-delete only.
+// ---------------------------------------------------------------------------
+
+export const comments = mysqlTable(
+  "comments",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    dealId: varchar("dealId", { length: 64 }).notNull(),
+    orgId: int("orgId").notNull(),
+    authorOpenId: varchar("authorOpenId", { length: 64 }).notNull(),
+    /** Markdown body. */
+    body: text("body").notNull(),
+    /** Resolved state with attribution. */
+    resolvedAt: timestamp("resolvedAt"),
+    resolvedByOpenId: varchar("resolvedByOpenId", { length: 64 }),
+    /** Blocker flag (Partner-only). Independent of resolved state. */
+    isBlocker: int("isBlocker").default(0).notNull(),
+    /** Soft delete marker. */
+    deletedAt: timestamp("deletedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    dealIdx: index("comments_deal_idx").on(table.dealId),
+    orgIdx: index("comments_org_idx").on(table.orgId),
+    authorIdx: index("comments_author_idx").on(table.authorOpenId),
+  }),
+);
+
+export type Comment = typeof comments.$inferSelect;
+export type InsertComment = typeof comments.$inferInsert;
+
+/** Computed field: true if deal has any unresolved blocker comments. */
+export type CommentWithBlocker = Comment & { isBlocker: 0 | 1 };
+
+// ---------------------------------------------------------------------------
+// NOTIFICATIONS — In-app bell notifications for @mentions and comment events.
+// ---------------------------------------------------------------------------
+
+export const notifications = mysqlTable(
+  "notifications",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    recipientOpenId: varchar("recipientOpenId", { length: 64 }).notNull(),
+    orgId: int("orgId").notNull(),
+    /** Reference to the triggering comment. */
+    commentId: bigint("commentId", { mode: "number" }).notNull(),
+    dealId: varchar("dealId", { length: 64 }).notNull(),
+    /** Notification type: 'mention', 'resolve', 'reply', etc. */
+    type: varchar("type", { length: 64 }).default("mention").notNull(),
+    /** Read state. */
+    readAt: timestamp("readAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    recipientIdx: index("notifications_recipient_idx").on(table.recipientOpenId),
+    dealIdx: index("notifications_deal_idx").on(table.dealId),
+    orgIdx: index("notifications_org_idx").on(table.orgId),
+  }),
+);
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;

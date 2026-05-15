@@ -26,6 +26,7 @@ function downloadBase64Zip(filename: string, base64: string) {
 export default function OrgAudit() {
   const { isPartner, role } = useRole();
   const [filter, setFilter] = useState("");
+  const [entityFilter, setEntityFilter] = useState<string>("all");
   const auditQuery = trpc.deals.auditAll.useQuery({ limit: 500 }, { enabled: isPartner });
 
   const exportMutation = trpc.compliance.exportArchive.useMutation({
@@ -41,13 +42,17 @@ export default function OrgAudit() {
   const entries = auditQuery.data ?? [];
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) =>
+    let result = entries;
+    if (entityFilter !== "all") {
+      result = result.filter((e) => (e.targetType ?? "deal") === entityFilter);
+    }
+    if (!q) return result;
+    return result.filter((e) =>
       [e.action, e.targetId, e.summary, e.actorName, e.actorOpenId]
         .filter(Boolean)
         .some((s) => String(s).toLowerCase().includes(q)),
     );
-  }, [entries, filter]);
+  }, [entries, filter, entityFilter]);
 
   if (!isPartner) {
     return (
@@ -87,6 +92,19 @@ export default function OrgAudit() {
             className="w-72"
             data-testid="org-audit-filter"
           />
+          <select
+            value={entityFilter}
+            onChange={(e) => setEntityFilter(e.target.value)}
+            className="text-sm border rounded px-3 py-2 bg-background"
+            data-testid="org-audit-entity-filter"
+          >
+            <option value="all">All entity types</option>
+            <option value="deal">Deals</option>
+            <option value="comment">Comments</option>
+            <option value="vote">Votes</option>
+            <option value="ballot">Ballots</option>
+            <option value="conflict">Conflicts</option>
+          </select>
           <Button
             onClick={() => exportMutation.mutate({})}
             disabled={exportMutation.isPending}
@@ -134,9 +152,14 @@ export default function OrgAudit() {
                     <span>
                       Action: <span className="font-mono">{e.action}</span>
                     </span>
+                    {e.targetType && (
+                      <span className="px-1.5 py-0.5 rounded bg-foreground/5 font-mono uppercase text-[10px]">
+                        {e.targetType}
+                      </span>
+                    )}
                     {e.targetId && (
                       <span>
-                        Deal: <span className="font-mono">{e.targetId}</span>
+                        Target: <span className="font-mono">{e.targetId}</span>
                       </span>
                     )}
                   </div>

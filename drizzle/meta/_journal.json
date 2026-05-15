@@ -22,6 +22,20 @@
       "when": 1778832370946,
       "tag": "0002_bizarre_doctor_octopus",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1778833992189,
+      "tag": "0003_busy_paibok",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1778834194050,
+      "tag": "0004_little_stryfe",
+      "breakpoints": true
     }
   ]
 }

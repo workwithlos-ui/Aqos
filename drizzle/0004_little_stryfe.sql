@@ -1,0 +1,1 @@
+ALTER TABLE `comments` ADD `isBlocker` int DEFAULT 0 NOT NULL;

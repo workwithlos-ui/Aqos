@@ -32,7 +32,14 @@ export type Permission =
   | "deal.restore_version"
   | "assumptions.edit"
   | "audit.view_org"
-  | "compliance.export";
+  | "compliance.export"
+  | "comment.create"
+  | "comment.edit_own"
+  | "comment.delete_own"
+  | "comment.delete_any"
+  | "comment.resolve"
+  | "comment.set_blocker"
+  | "notification.read";
 
 const PARTNER_PERMS: Permission[] = [
   "deal.create",
@@ -47,6 +54,13 @@ const PARTNER_PERMS: Permission[] = [
   "assumptions.edit",
   "audit.view_org",
   "compliance.export",
+  "comment.create",
+  "comment.edit_own",
+  "comment.delete_own",
+  "comment.delete_any",
+  "comment.resolve",
+  "comment.set_blocker",
+  "notification.read",
 ];
 
 const ANALYST_PERMS: Permission[] = [
@@ -54,9 +68,16 @@ const ANALYST_PERMS: Permission[] = [
   "deal.edit",
   "deal.stage_change",
   "assumptions.edit",
+  "comment.create",
+  "comment.edit_own",
+  "comment.delete_own",
+  "comment.resolve",
+  "notification.read",
 ];
 
-const OBSERVER_PERMS: Permission[] = [];
+const OBSERVER_PERMS: Permission[] = [
+  "notification.read", // Observers can read notifications but cannot create/edit/delete/resolve/flag comments
+];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   partner: PARTNER_PERMS,
@@ -80,9 +101,9 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  partner: "Full access. Vote in IC. Approve LOIs. Override engine.",
-  analyst: "Create and edit deals. Run analysis. Cannot approve LOIs or vote.",
-  observer: "Read-only. LP-style access. No edit, no comment, no vote.",
-  admin: "Full access. Vote in IC. Approve LOIs. Override engine.",
-  user: "Create and edit deals. Run analysis. Cannot approve LOIs or vote.",
+  partner: "Full access. Vote in IC. Approve LOIs. Override engine. Can delete any comment.",
+  analyst: "Create and edit deals. Run analysis. Cannot approve LOIs or vote. Can comment and resolve.",
+  observer: "Read-only. LP-style access. Can read comments but cannot create, edit, delete, or resolve.",
+  admin: "Full access. Vote in IC. Approve LOIs. Override engine. Can delete any comment.",
+  user: "Create and edit deals. Run analysis. Cannot approve LOIs or vote. Can comment and resolve.",
 };

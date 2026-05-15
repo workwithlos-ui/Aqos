@@ -10,6 +10,7 @@ import {
   insertDealVersion,
   listAuditEntries,
   listAuditEntriesForDeal,
+  listAuditEntriesByEntity,
   listDealVersions,
   listDealsByOrg,
   updateDealRow,
@@ -229,6 +230,17 @@ export const dealsRouter = router({
     .query(async ({ ctx, input }) => {
       const orgId = orgIdFromCtx(ctx);
       return listAuditEntriesForDeal(orgId, input.dealId, input.limit);
+    }),
+
+  auditForEntity: protectedProcedure
+    .input(z.object({
+      entityType: z.string(),
+      entityId: z.string().optional(),
+      limit: z.number().int().min(1).max(500).default(100),
+    }))
+    .query(async ({ ctx, input }) => {
+      const orgId = orgIdFromCtx(ctx);
+      return listAuditEntriesByEntity(orgId, input.entityType, input.entityId, input.limit);
     }),
 
   // ---------------------------------------------------------------- bulk import (migration)

@@ -17,8 +17,16 @@ export default function DealHistory() {
 
   const deal = useMemo(() => deals.find((d) => d.id === id), [deals, id]);
 
+  const [entityTypeFilter, setEntityTypeFilter] = useState<string>("all");
+
   const auditQuery = trpc.deals.auditForDeal.useQuery(
     { dealId: id ?? "", limit: 200 },
+    { enabled: Boolean(id) },
+  );
+
+  // Also fetch comment audit entries for this deal
+  const commentAuditQuery = trpc.deals.auditForEntity.useQuery(
+    { entityType: "comment", entityId: id ?? "", limit: 200 },
     { enabled: Boolean(id) },
   );
   const versionsQuery = trpc.deals.versions.useQuery(
@@ -53,7 +61,29 @@ export default function DealHistory() {
     );
   }
 
-  const audit = auditQuery.data ?? [];
+  // Merge deal + comment audit entries, sort newest first
+  const allAudit = useMemo(() => {
+    type AuditRow = {
+      id: number | string;
+      targetType: string | null;
+      targetId: string | null;
+      action: string;
+      summary: string | null;
+      actorName: string | null;
+      actorOpenId: string;
+      diff: unknown;
+      createdAt: string | Date;
+    };
+    const dealEntries = ((auditQuery.data ?? []) as AuditRow[]).map((e) => ({ ...e, entityType: e.targetType ?? "deal" }));
+    const commentEntries = ((commentAuditQuery.data ?? []) as AuditRow[]).map((e) => ({ ...e, entityType: e.targetType ?? "comment" }));
+    const merged = [...dealEntries, ...commentEntries].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    if (entityTypeFilter === "all") return merged;
+    return merged.filter((e) => e.entityType === entityTypeFilter);
+  }, [auditQuery.data, commentAuditQuery.data, entityTypeFilter]);
+
+  const audit = allAudit;
   const versions = versionsQuery.data ?? [];
 
   return (
@@ -74,10 +104,24 @@ export default function DealHistory() {
         {/* Audit log column */}
         <Card data-testid="history-audit-column">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="size-4" /> Audit log
-            </CardTitle>
-            <CardDescription>{audit.length} entries</CardDescription>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <History className="size-4" /> Audit log
+                </CardTitle>
+                <CardDescription>{audit.length} entries</CardDescription>
+              </div>
+              <select
+                value={entityTypeFilter}
+                onChange={(e) => setEntityTypeFilter(e.target.value)}
+                className="text-xs border rounded px-2 py-1 bg-background"
+                data-testid="history-filter"
+              >
+                <option value="all">All events</option>
+                <option value="deal">Deal mutations</option>
+                <option value="comment">Comments</option>
+              </select>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {audit.length === 0 ? (

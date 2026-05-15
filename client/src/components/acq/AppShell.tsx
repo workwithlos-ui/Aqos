@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, Link } from "wouter";
+import { NotificationBell } from "./NotificationBell";
 
 const NAV = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -145,6 +146,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <main className="flex-1 min-w-0">
+        <div className="hidden md:flex sticky top-0 z-40 bg-background border-b px-6 py-2 justify-end items-center gap-3">
+          <NotificationBell />
+        </div>
         <div className="md:hidden sticky top-0 z-40 bg-sidebar text-sidebar-foreground border-b border-sidebar-border px-4 py-3 flex gap-3 overflow-x-auto">
           {NAV.map((n) => (
             <Link key={n.path} href={n.path}>
