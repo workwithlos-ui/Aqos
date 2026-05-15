@@ -1403,3 +1403,107 @@ describe("Iteration 9 — LOI .docx generator", () => {
     expect(u8[1]).toBe(0x4b); // K
   });
 });
+
+
+// ──────────────────────────────────────────────────────────────────────────
+// Iteration 10 — IRR calibration, capitalization sweep, Exports bidirectional
+// ──────────────────────────────────────────────────────────────────────────
+
+describe("Iteration 10 — IRR calibration on Smoke Test (HVAC $2.5M / $500K / $1.75M)", () => {
+  const smokeInput = {
+    companyName: "HVAC Smoke Co",
+    industry: "hvac",
+    annualRevenue: 2_500_000,
+    annualEBITDA: 500_000,
+    annualSDE: null,
+    askingPrice: 1_750_000,
+    revenueTrend: "stable",
+    customerConcentration: "low",
+    ownerRole: "absentee",
+    workingCapital: { workingCapitalPeg: null, capExNeedsAnnual: null },
+  };
+  const result = analyzeDeal(smokeInput as any);
+  const pe = result.peReturns;
+
+  it("base IRR is between 30% and 55% (defensible PE returns, not 174%)", () => {
+    expect(pe.available).toBe(true);
+    expect(pe.base.irr).not.toBeNull();
+    expect(pe.base.irr!).toBeGreaterThanOrEqual(0.30);
+    expect(pe.base.irr!).toBeLessThanOrEqual(0.55);
+  });
+
+  it("base MOIC is between 5x and 9x", () => {
+    expect(pe.base.moic).not.toBeNull();
+    expect(pe.base.moic!).toBeGreaterThanOrEqual(5);
+    expect(pe.base.moic!).toBeLessThanOrEqual(9);
+  });
+
+  it("equity-at-risk denominator includes closing-cost reserve (not just buyer equity tranche)", () => {
+    const buyerEquity = result.capitalStack.buyerEquity.amount ?? 0;
+    expect(pe.assumptions.initialEquityAtRisk).toBeGreaterThan(buyerEquity);
+    const closingReserve = pe.assumptions.initialEquityAtRisk - buyerEquity;
+    expect(closingReserve).toBeGreaterThan(0);
+  });
+
+  it("exit multiples are entry-anchored × 0.85 / 1.00 / 1.15", () => {
+    const entry = pe.assumptions.entryMultiple;
+    expect(pe.assumptions.exitMultipleBear).toBeCloseTo(entry * 0.85, 2);
+    expect(pe.assumptions.exitMultipleBase).toBeCloseTo(entry * 1.0, 2);
+    expect(pe.assumptions.exitMultipleBull).toBeCloseTo(entry * 1.15, 2);
+  });
+
+  it("CapEx scales with revenue (Y5 capex > Y1 capex if growth > 0)", () => {
+    const y1 = pe.base.rows[1];
+    const y5 = pe.base.rows[5];
+    expect(y5.capex).toBeGreaterThan(y1.capex);
+    expect(y1.capex).toBeCloseTo(y1.revenue * 0.025, 0);
+  });
+
+  it("ΔWC scales with revenue change", () => {
+    const y3 = pe.base.rows[3];
+    const y2 = pe.base.rows[2];
+    const expectedDeltaWC = (y3.revenue - y2.revenue) * 0.07;
+    expect(y3.workingCapitalChange).toBeCloseTo(expectedDeltaWC, 0);
+  });
+
+  it("tax of 27% is applied to positive buyer pre-tax FCF", () => {
+    const y3 = pe.base.rows[3];
+    if (y3.preTaxBuyerCashFlow > 0) {
+      expect(y3.tax).toBeCloseTo(y3.preTaxBuyerCashFlow * 0.27, 0);
+      expect(y3.buyerCashFlow).toBeCloseTo(y3.preTaxBuyerCashFlow * 0.73, 0);
+    }
+  });
+
+  it("capital gains tax (24%) is applied on exit gain only, not return-of-capital", () => {
+    const gain = pe.base.exitGrossEquityProceeds - pe.assumptions.initialEquityAtRisk;
+    if (gain > 0) {
+      expect(pe.base.exitCapitalGainsTax).toBeCloseTo(gain * 0.24, 0);
+    } else {
+      expect(pe.base.exitCapitalGainsTax).toBe(0);
+    }
+  });
+});
+
+describe("Iteration 10 — Industry capitalization in diligence checklist + Copilot + thesis", () => {
+  const input = {
+    companyName: "Pulse HVAC",
+    industry: "hvac",
+    annualRevenue: 2_500_000,
+    annualEBITDA: 500_000,
+    askingPrice: 1_750_000,
+  };
+  const r = analyzeDeal(input as any);
+
+  it("autoDiligence checklist items capitalize industry (no 'hvac' in reason text)", () => {
+    const allReasons = r.autoDiligence.items.map((it: any) => `${it.label} ${it.rationale ?? ""} ${it.reason ?? ""}`).join(" ");
+    expect(allReasons).not.toMatch(/\bhvac\b/);
+    // At least one HVAC-specific item must exist for an HVAC deal
+    expect(allReasons).toMatch(/HVAC/);
+  });
+
+  it("anomalies surface with capitalized industry name", () => {
+    const text = r.anomalies.map((a: any) => `${a.title} ${a.detail}`).join(" ");
+    expect(text).not.toMatch(/\bhvac\b industry|the hvac /);
+    expect(text).toMatch(/HVAC/);
+  });
+});

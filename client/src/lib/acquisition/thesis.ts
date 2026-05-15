@@ -1,4 +1,5 @@
 import type { BuyBox, DealInput, ThesisCriterion, ThesisFitResult } from "./types";
+import { industryDisplayName } from "./industryDefaults";
 
 export function scoreThesisFit(input: DealInput, buyBox: BuyBox | null): ThesisFitResult {
   if (!buyBox || !buyBox.targetIndustries || buyBox.targetIndustries.length === 0) {
@@ -35,7 +36,7 @@ export function scoreThesisFit(input: DealInput, buyBox: BuyBox | null): ThesisF
       label: "Excluded Industry",
       weight: "must",
       status: "fail",
-      detail: `Industry "${input.industry}" is on the exclusion list.`,
+      detail: `Industry "${industryDisplayName(input.industry as string)}" is on the exclusion list.`,
     });
     mustHaveBlocked.push("Excluded industry");
   } else if (!inTarget && buyBox.targetIndustries.length > 0) {
@@ -44,7 +45,7 @@ export function scoreThesisFit(input: DealInput, buyBox: BuyBox | null): ThesisF
       label: "Not Target Industry",
       weight: "must",
       status: "fail",
-      detail: `Industry "${input.industry}" not in target list: ${buyBox.targetIndustries.join(", ")}.`,
+      detail: `Industry "${industryDisplayName(input.industry as string)}" not in target list: ${buyBox.targetIndustries.map((t) => industryDisplayName(t)).join(", ")}.`,
     });
     mustHaveBlocked.push("Not target industry");
   } else if (inTarget) {
@@ -53,7 +54,7 @@ export function scoreThesisFit(input: DealInput, buyBox: BuyBox | null): ThesisF
       label: "Target Industry",
       weight: "must",
       status: "pass",
-      detail: `Industry "${input.industry}" matches target.`,
+      detail: `Industry "${industryDisplayName(input.industry as string)}" matches target.`,
     });
   }
 

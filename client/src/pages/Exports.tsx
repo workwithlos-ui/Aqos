@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useDealStore } from "@/lib/acquisition/store";
 import { analyzeDeal } from "@/lib/acquisition";
@@ -9,6 +9,7 @@ import { Streamdown } from "streamdown";
 import { Copy, Download, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { buildLOIDocx, defaultLOIFields } from "@/lib/acquisition/loiDocx";
+import type { DealAnalysis, DealInput } from "@/lib/acquisition/types";
 
 const KINDS: Array<{ id: ExportKind; label: string; desc: string }> = [
   { id: "ic-memo", label: "Investment Committee Memo", desc: "Full deterministic underwriting memo." },
@@ -23,13 +24,8 @@ export default function Exports() {
   const params = useParams<{ id?: string }>();
   const { deals, assumptions, activeDealId, setActiveDealId } = useDealStore();
   const [kind, setKind] = useState<ExportKind>("ic-memo");
-  const [renderKey, setRenderKey] = useState(0); // Force re-render on deal change
 
-  // P0.2 Iteration 9 — The route param is a ONE-TIME initializer only. Once
-  // the user changes the dropdown, the store's active deal id is the single
-  // source of truth. Without this fix, params.id stayed pinned forever and
-  // the second dropdown switch was ignored ("Smoke → Bluefield retains old
-  // company name" bug).
+  // Route param is a one-time initializer only.
   const [routeInitialized, setRouteInitialized] = useState(false);
   useEffect(() => {
     if (!routeInitialized && params.id && params.id !== activeDealId) {
@@ -44,46 +40,6 @@ export default function Exports() {
     deals.find((d) => !d.isTest)?.id ??
     "";
 
-  // Always look up by id at render time (no stale ref). Key analysis on
-  // both id + updatedAt + a stable JSON snapshot so any change to the deal
-  // object (or selection) immediately re-runs analyzeDeal.
-  const deal = useMemo(() => deals.find((d) => d.id === dealId) ?? null, [deals, dealId]);
-  const dealFingerprint = useMemo(() => (deal ? JSON.stringify(deal) : ""), [deal]);
-  const assumptionsFingerprint = useMemo(() => JSON.stringify(assumptions), [assumptions]);
-
-  const analysis = useMemo(
-    () => (deal ? analyzeDeal(deal, assumptions) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dealId, dealFingerprint, assumptionsFingerprint],
-  );
-
-  const payload = useMemo(
-    () => (analysis ? generateExport(kind, analysis) : null),
-    [analysis, kind],
-  );
-
-  // Force re-render on dealId change to invalidate memos
-  useEffect(() => {
-    setRenderKey((k) => k + 1);
-  }, [dealId]);
-
-  function copy() {
-    if (!payload) return;
-    navigator.clipboard.writeText(payload.content);
-    toast.success(`Copied "${payload.title}" to clipboard`);
-  }
-  function download() {
-    if (!payload) return;
-    const blob = new Blob([payload.content], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = payload.filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`Downloaded ${payload.filename}`);
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -96,15 +52,6 @@ export default function Exports() {
             is invented.
           </p>
         </div>
-        {analysis && (
-          <div
-            className="text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md border border-border"
-            data-testid="exports-active-deal-name"
-          >
-            <span className="font-medium text-foreground">Currently exporting:</span>{" "}
-            <span className="font-mono">{analysis.companyName?.trim() || "Untitled deal"}</span>
-          </div>
-        )}
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -112,10 +59,12 @@ export default function Exports() {
           <div>
             <div className="metric-label mb-1">Deal</div>
             <Select value={dealId} onValueChange={(v) => setActiveDealId(v)}>
-              <SelectTrigger><SelectValue placeholder="Select deal" /></SelectTrigger>
+              <SelectTrigger data-testid="exports-deal-select">
+                <SelectValue placeholder="Select deal" />
+              </SelectTrigger>
               <SelectContent>
                 {deals.map((d) => (
-                  <SelectItem key={d.id} value={d.id ?? ""}>
+                  <SelectItem key={d.id} value={d.id ?? ""} data-testid={`exports-deal-option-${d.id}`}>
                     {d.companyName?.trim() || "Untitled deal"}{d.isDemo ? " (demo)" : d.isTest ? " (test)" : ""}
                   </SelectItem>
                 ))}
@@ -141,53 +90,113 @@ export default function Exports() {
           </div>
         </aside>
 
-        <section className="panel p-0 lg:col-span-3 overflow-hidden flex flex-col">
-          {payload ? (
-            <>
-              <div className="flex items-center justify-between border-b border-border px-5 py-3">
-                <div>
-                  <div className="font-semibold">{payload.title}</div>
-                  <div className="text-[11px] text-muted-foreground font-mono">{payload.filename}</div>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="bg-card" onClick={copy}><Copy className="size-4 mr-1.5" /> Copy</Button>
-                  <Button onClick={download}><Download className="size-4 mr-1.5" /> Download .md</Button>
-                  {deal && analysis && (
-                    <Button
-                      variant="outline"
-                      className="bg-card"
-                      data-testid="download-loi-docx"
-                      onClick={async () => {
-                        try {
-                          const { blob, filename } = await buildLOIDocx(deal, analysis, defaultLOIFields());
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement("a");
-                          a.href = url;
-                          a.download = filename;
-                          a.click();
-                          URL.revokeObjectURL(url);
-                          toast.success(`Downloaded ${filename}`);
-                        } catch (err) {
-                          toast.error("LOI generation failed: " + String(err));
-                        }
-                      }}
-                    >
-                      <FileText className="size-4 mr-1.5" /> Download LOI (.docx)
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div className="prose prose-sm dark:prose-invert max-w-none p-6 overflow-auto">
-                <Streamdown>{payload.content}</Streamdown>
-              </div>
-            </>
-          ) : (
-            <div className="p-10 text-center text-muted-foreground text-sm">
-              Pick a deal to preview the export.
-            </div>
-          )}
-        </section>
+        {/*
+          P0.1 Iteration 10 — React key={dealId+kind} forces full unmount + remount of
+          the entire export content section every time the dropdown OR export kind
+          changes. Streamdown caches its rendered output by content prop reference,
+          so without remount the markdown body would stick to the previous deal even
+          though the title updated. With remount, every dropdown switch produces a
+          fresh component tree with fresh analyzeDeal output.
+        */}
+        <ExportContent
+          key={`${dealId}-${kind}`}
+          dealId={dealId}
+          deal={deals.find((d) => d.id === dealId) ?? null}
+          assumptions={assumptions}
+          kind={kind}
+        />
       </div>
     </div>
+  );
+}
+
+function ExportContent({
+  dealId,
+  deal,
+  assumptions,
+  kind,
+}: {
+  dealId: string;
+  deal: DealInput | null;
+  assumptions: Parameters<typeof analyzeDeal>[1];
+  kind: ExportKind;
+}) {
+  // No useMemo — compute fresh each render. Render is keyed by dealId so this
+  // only runs when the deal actually changes.
+  const analysis: DealAnalysis | null = deal ? analyzeDeal(deal, assumptions) : null;
+  const payload = analysis ? generateExport(kind, analysis) : null;
+
+  function copy() {
+    if (!payload) return;
+    navigator.clipboard.writeText(payload.content);
+    toast.success(`Copied "${payload.title}" to clipboard`);
+  }
+  function download() {
+    if (!payload) return;
+    const blob = new Blob([payload.content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = payload.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${payload.filename}`);
+  }
+
+  return (
+    <section className="panel p-0 lg:col-span-3 overflow-hidden flex flex-col" data-testid="exports-content-section">
+      {payload && analysis ? (
+        <>
+          <div className="flex items-center justify-between border-b border-border px-5 py-3">
+            <div>
+              <div className="font-semibold" data-testid="exports-payload-title">{payload.title}</div>
+              <div className="text-[11px] text-muted-foreground font-mono" data-testid="exports-filename">{payload.filename}</div>
+              <div
+                className="text-[11px] text-muted-foreground mt-0.5"
+                data-testid="exports-active-company"
+              >
+                Bound to: <span className="font-mono text-foreground">{analysis.companyName?.trim() || "Untitled deal"}</span>
+                {" · "}
+                <span className="font-mono">{dealId.slice(0, 8)}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="bg-card" onClick={copy}><Copy className="size-4 mr-1.5" /> Copy</Button>
+              <Button onClick={download}><Download className="size-4 mr-1.5" /> Download .md</Button>
+              {deal && (
+                <Button
+                  variant="outline"
+                  className="bg-card"
+                  data-testid="download-loi-docx"
+                  onClick={async () => {
+                    try {
+                      const { blob, filename } = await buildLOIDocx(deal, analysis, defaultLOIFields());
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = filename;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      toast.success(`Downloaded ${filename}`);
+                    } catch (err) {
+                      toast.error("LOI generation failed: " + String(err));
+                    }
+                  }}
+                >
+                  <FileText className="size-4 mr-1.5" /> Download LOI (.docx)
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="prose prose-sm dark:prose-invert max-w-none p-6 overflow-auto" data-testid="exports-body">
+            <Streamdown>{payload.content}</Streamdown>
+          </div>
+        </>
+      ) : (
+        <div className="p-10 text-center text-muted-foreground text-sm">
+          Pick a deal to preview the export.
+        </div>
+      )}
+    </section>
   );
 }

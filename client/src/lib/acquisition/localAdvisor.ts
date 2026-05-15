@@ -5,6 +5,7 @@
 // (ADVISOR_SYSTEM_PROMPT) used as the system message.
 
 import type { AdvisorDealContext, AdvisorPortfolioContext } from "./advisorContext";
+import { industryDisplayName } from "./industryDefaults";
 
 export interface AdvisorAnswer {
   question: string;
@@ -89,7 +90,7 @@ function composeICMemoFromContext(c: AdvisorDealContext): string {
   lines.push(`${c.scoreLabel}: ${c.scoreOutOf100}/100. Confidence: **${c.verdictConfidence}** — ${c.verdictConfidenceReason}.`);
   lines.push("");
   lines.push(`## Deal Snapshot`);
-  lines.push(`- Industry: ${c.industry}`);
+  lines.push(`- Industry: ${industryDisplayName(c.industry as string)}`);
   lines.push(`- Revenue: ${c.revenue}`);
   lines.push(`- ${c.earningsBasis}: ${c.earnings}`);
   lines.push(`- Asking / Purchase Price: ${c.purchasePriceUsed} (${c.purchasePriceSource})`);
@@ -165,7 +166,7 @@ function composeLenderSummaryFromContext(c: AdvisorDealContext): string {
   const out: string[] = [];
   out.push(`# Lender Summary — ${c.companyName}`);
   out.push("");
-  out.push(`Industry: ${c.industry}. Revenue: ${c.revenue}. ${c.earningsBasis}: ${c.earnings}. Margin: ${c.ebitdaMargin}.`);
+  out.push(`Industry: ${industryDisplayName(c.industry as string)}. Revenue: ${c.revenue}. ${c.earningsBasis}: ${c.earnings}. Margin: ${c.ebitdaMargin}.`);
   out.push(`Purchase price: ${c.purchasePriceUsed} (${c.purchasePriceSource}). EV/${c.earningsBasis}: ${c.earningsBasis === "EBITDA" ? c.multipleEvEbitda : c.multipleEvSde}.`);
   out.push("");
   out.push(`## Capital Stack`);

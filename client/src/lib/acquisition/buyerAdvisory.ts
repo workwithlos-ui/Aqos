@@ -689,7 +689,7 @@ export function computeAutoDiligence(
     ? INDUSTRY_DILIGENCE[industryKey].map((item) => ({
         ...item,
         status: "outstanding" as const,
-        reason: `Specific to ${industryKey} acquisitions.`,
+        reason: `Specific to ${industryDisplayName(industryKey)} acquisitions.`,
       }))
     : [];
 

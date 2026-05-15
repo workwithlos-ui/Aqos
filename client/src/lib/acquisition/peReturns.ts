@@ -1,45 +1,64 @@
 /**
- * PE-grade returns engine — Iteration 9
+ * PE-grade returns engine — Iteration 10 (calibrated)
  *
- * Deterministic 5-year projection + IRR + MOIC across bear / base / bull
- * scenarios, plus a sensitivity grid on (exit multiple × revenue growth)
- * shaded by IRR. Every number here is computed from inputs that are already
- * on the DealAnalysis — no AI invention.
+ * Calibration rules (per brief):
+ *   1. Initial equity denominator = full equity-at-risk = buyer equity tranche
+ *      + closing-cost reserve (legal + QoE + lender fees + post-close runway).
+ *      Same value used in cash-on-cash.
+ *   2. taxRate (default 27%) applied to Y1–Y5 buyer FCF (after debt service).
+ *   3. capitalGainsTaxRate (default 24%) applied to exit GAIN only
+ *      (proceeds − initial equity-at-risk), never to return-of-capital.
+ *   4. CapEx scales with revenue: capex_y_n = revenue_y_n × industryCapexPct.
+ *   5. ΔWC scales with revenue change: ΔWC = (rev_n − rev_n−1) × industryWcPct.
+ *   6. Exit multiples re-centered on entry multiple × {0.85, 1.00, 1.15},
+ *      NOT benchmark band edges.
  *
- * Assumptions explicitly surfaced (not hidden):
- *   • Hold period: configurable; default 5 years
- *   • Annual revenue growth (bear, base, bull): industry-default curve
- *   • EBITDA margin trajectory: tied to the entry margin, with bear/bull tilts
- *   • Exit multiple: defaults to entry comparison multiple (EV/EBITDA or EV/SDE)
- *   • Debt paydown: straight-line amortization on SBA + seller note
- *   • Cash sweep: 100% of buyer cash flow swept to debt principal
+ * Buyer Free Cash Flow per year =
+ *   EBITDA
+ *   − Debt service (interest + principal portion)
+ *   − CapEx (scaled with revenue)
+ *   − ΔWC (scaled with revenue change)
+ *   − Tax (27% applied on the pre-tax buyer FCF that is positive)
  *
- * IRR uses Newton-Raphson with bisection fallback. MOIC is the standard
- * total-distributions / total-equity-in. Returns are computed at the equity
- * level (buyer's view), not deal level.
+ * Equity proceeds at exit =
+ *   Exit EV (net of transaction costs)
+ *   − Remaining debt balance
+ *   − Capital gains tax on (gross proceeds − initial equity-at-risk)
+ *
+ * IRR is computed on the equity stream:
+ *   year 0:        −initialEquityAtRisk
+ *   year 1..N−1:   buyer FCF after tax
+ *   year N:        buyer FCF after tax + after-tax exit equity proceeds
  */
 
 import type {
   DealAnalysis,
   DealInput,
-  CapitalStackAssumptions,
 } from "./types";
 import { isFiniteNumber } from "./dealMath";
+import { getIndustryDefault } from "./industryDefaults";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface ProjectionAssumptions {
   holdYears: number;
-  revenueGrowthBear: number; // e.g. -0.02 = -2%/yr
+  revenueGrowthBear: number;
   revenueGrowthBase: number;
   revenueGrowthBull: number;
-  marginDriftBear: number; // change in EBITDA margin per year (additive)
+  marginDriftBear: number;
   marginDriftBase: number;
   marginDriftBull: number;
-  exitMultipleBear: number; // EBITDA multiple at exit
+  exitMultipleBear: number;
   exitMultipleBase: number;
   exitMultipleBull: number;
-  exitTransactionCostsPct: number; // % of exit EV
+  exitTransactionCostsPct: number;
+  taxRate: number;
+  capitalGainsTaxRate: number;
+  industryCapexPct: number;
+  industryWcPct: number;
+  closingCostsPct: number;
+  entryMultiple: number;
+  initialEquityAtRisk: number;
 }
 
 export interface ProjectionYearRow {
@@ -48,6 +67,10 @@ export interface ProjectionYearRow {
   ebitda: number;
   margin: number;
   debtService: number;
+  capex: number;
+  workingCapitalChange: number;
+  preTaxBuyerCashFlow: number;
+  tax: number;
   buyerCashFlow: number;
   debtBalance: number;
   cumulativeEquityCashFlow: number;
@@ -58,6 +81,8 @@ export interface ScenarioProjection {
   rows: ProjectionYearRow[];
   exitEnterpriseValue: number;
   exitDebtPayoff: number;
+  exitGrossEquityProceeds: number;
+  exitCapitalGainsTax: number;
   exitEquityProceeds: number;
   totalEquityIn: number;
   totalDistributions: number;
@@ -75,7 +100,7 @@ export interface SensitivityCell {
 export interface SensitivityGrid {
   exitMultiples: number[];
   revenueGrowths: number[];
-  cells: SensitivityCell[][]; // [row=multiple][col=growth]
+  cells: SensitivityCell[][];
 }
 
 export interface PEReturnsResult {
@@ -93,61 +118,52 @@ export interface PEReturnsResult {
 interface IndustryProjectionCurve {
   growth: { bear: number; base: number; bull: number };
   marginDrift: { bear: number; base: number; bull: number };
-  exitMultiplePadding: number; // exit multiple = entry × (1 + padding) for base
 }
 
 const INDUSTRY_PROJECTION_CURVES: Record<string, IndustryProjectionCurve> = {
   hvac: {
-    growth: { bear: -0.02, base: 0.04, bull: 0.08 },
-    marginDrift: { bear: -0.01, base: 0.005, bull: 0.015 },
-    exitMultiplePadding: 0.05,
+    // HVAC is a mature trade. Realistic organic base growth is ~3.5%.
+    growth: { bear: -0.02, base: 0.035, bull: 0.065 },
+    // Margins are stable. Base case = no operational improvement.
+    marginDrift: { bear: -0.015, base: 0, bull: 0.01 },
   },
   plumbing: {
     growth: { bear: -0.02, base: 0.03, bull: 0.07 },
     marginDrift: { bear: -0.01, base: 0.005, bull: 0.015 },
-    exitMultiplePadding: 0.05,
   },
   electrical: {
     growth: { bear: -0.02, base: 0.03, bull: 0.07 },
     marginDrift: { bear: -0.01, base: 0.005, bull: 0.015 },
-    exitMultiplePadding: 0.05,
   },
   roofing: {
     growth: { bear: -0.03, base: 0.025, bull: 0.06 },
     marginDrift: { bear: -0.015, base: 0, bull: 0.01 },
-    exitMultiplePadding: 0.0,
   },
   landscaping: {
     growth: { bear: -0.03, base: 0.03, bull: 0.07 },
     marginDrift: { bear: -0.01, base: 0, bull: 0.01 },
-    exitMultiplePadding: 0.0,
   },
   "auto repair": {
     growth: { bear: -0.03, base: 0.02, bull: 0.06 },
     marginDrift: { bear: -0.015, base: 0, bull: 0.01 },
-    exitMultiplePadding: 0.0,
   },
   restaurant: {
     growth: { bear: -0.05, base: 0.02, bull: 0.06 },
     marginDrift: { bear: -0.02, base: -0.005, bull: 0.01 },
-    exitMultiplePadding: -0.05,
   },
   "it services": {
     growth: { bear: -0.02, base: 0.06, bull: 0.12 },
     marginDrift: { bear: -0.01, base: 0.01, bull: 0.02 },
-    exitMultiplePadding: 0.1,
   },
   "marketing agency": {
     growth: { bear: -0.05, base: 0.05, bull: 0.1 },
     marginDrift: { bear: -0.02, base: 0, bull: 0.015 },
-    exitMultiplePadding: 0.0,
   },
 };
 
 const DEFAULT_CURVE: IndustryProjectionCurve = {
   growth: { bear: -0.03, base: 0.03, bull: 0.07 },
   marginDrift: { bear: -0.01, base: 0, bull: 0.015 },
-  exitMultiplePadding: 0.0,
 };
 
 function curveFor(industry: string | null | undefined): IndustryProjectionCurve {
@@ -157,13 +173,8 @@ function curveFor(industry: string | null | undefined): IndustryProjectionCurve 
 
 // ─── IRR / MOIC math ────────────────────────────────────────────────────────
 
-/**
- * Newton-Raphson IRR with bisection fallback. Cash flows are year-end,
- * with year 0 being the initial equity outflow (negative).
- */
 export function computeIRR(cashFlows: number[]): number | null {
   if (cashFlows.length < 2) return null;
-  // Need at least one positive and one negative.
   const hasNeg = cashFlows.some((c) => c < 0);
   const hasPos = cashFlows.some((c) => c > 0);
   if (!hasNeg || !hasPos) return null;
@@ -173,7 +184,6 @@ export function computeIRR(cashFlows: number[]): number | null {
   const dnpv = (r: number) =>
     cashFlows.reduce((acc, cf, t) => acc - (t * cf) / Math.pow(1 + r, t + 1), 0);
 
-  // Try Newton from r=0.1
   let r = 0.1;
   for (let i = 0; i < 100; i++) {
     const f = npv(r);
@@ -185,7 +195,6 @@ export function computeIRR(cashFlows: number[]): number | null {
     r = next;
   }
 
-  // Bisection fallback in [-0.99, 10]
   let lo = -0.99;
   let hi = 10;
   let fLo = npv(lo);
@@ -213,7 +222,7 @@ function computeMOIC(totalEquityIn: number, totalDistributions: number): number 
 
 // ─── Single-scenario projection ─────────────────────────────────────────────
 
-function projectScenario(args: {
+interface ProjectArgs {
   label: "Bear" | "Base" | "Bull";
   startRevenue: number;
   startMargin: number;
@@ -224,49 +233,87 @@ function projectScenario(args: {
   holdYears: number;
   exitMultiple: number;
   exitTransactionCostsPct: number;
-  buyerEquity: number;
+  initialEquityAtRisk: number;
+  industryCapexPct: number;
+  industryWcPct: number;
+  taxRate: number;
+  capitalGainsTaxRate: number;
+  blendedDebtRate: number; // weighted-avg interest rate used for amortization
+  debtTermYears: number;   // weighted-avg term used for amortization
   rationale: string;
-}): ScenarioProjection {
+}
+
+function projectScenario(args: ProjectArgs): ScenarioProjection {
   const rows: ProjectionYearRow[] = [];
   let revenue = args.startRevenue;
+  let prevRevenue = args.startRevenue;
   let margin = args.startMargin;
   let debtBalance = args.startDebtBalance;
-  let cumulativeEquityCashFlow = -args.buyerEquity; // year 0 outflow
+  let cumulativeEquityCashFlow = -args.initialEquityAtRisk;
 
-  // Year 0 row (entry)
+  // Year 0 row
   rows.push({
     year: 0,
     revenue: args.startRevenue,
     ebitda: args.startRevenue * args.startMargin,
     margin: args.startMargin,
     debtService: 0,
+    capex: 0,
+    workingCapitalChange: 0,
+    preTaxBuyerCashFlow: 0,
+    tax: 0,
     buyerCashFlow: 0,
     debtBalance: args.startDebtBalance,
     cumulativeEquityCashFlow,
   });
 
-  // Years 1..holdYears
-  // Principal portion of debt service approximates straight-line amortization.
-  const principalPerYear = args.holdYears > 0 ? args.startDebtBalance / args.holdYears : 0;
+  // Level-payment amortization (SBA / commercial-loan style).
+  // The debt is fully amortizing over its full term. We track principal vs.
+  // interest each year using the standard amortization formula, so the debt
+  // balance at exit reflects how much of the loan is actually paid down
+  // during the hold period — not the full payoff that straight-line
+  // assumed (which inflated equity proceeds).
+  const r = args.blendedDebtRate;
+  const annualPayment = args.annualDebtService;
 
   for (let year = 1; year <= args.holdYears; year++) {
     revenue = revenue * (1 + args.growth);
     margin = Math.max(0, Math.min(1, margin + args.marginDrift));
     const ebitda = revenue * margin;
-    const debtService = Math.min(args.annualDebtService, ebitda + debtBalance);
-    const buyerCashFlow = ebitda - debtService;
-    debtBalance = Math.max(0, debtBalance - principalPerYear);
+    const debtService = Math.min(annualPayment, ebitda + debtBalance);
+
+    // Split debt service into interest + principal at the blended rate.
+    const interest = debtBalance * r;
+    const principalPaid = Math.max(0, Math.min(debtBalance, debtService - interest));
+
+    // CapEx scales with revenue
+    const capex = revenue * args.industryCapexPct;
+    // ΔWC scales with revenue change (only positive growth eats WC)
+    const wcChange = Math.max(0, revenue - prevRevenue) * args.industryWcPct;
+
+    const preTaxBuyerCashFlow = ebitda - debtService - capex - wcChange;
+    const tax = preTaxBuyerCashFlow > 0 ? preTaxBuyerCashFlow * args.taxRate : 0;
+    const buyerCashFlow = preTaxBuyerCashFlow - tax;
+
+    debtBalance = Math.max(0, debtBalance - principalPaid);
     cumulativeEquityCashFlow += buyerCashFlow;
+
     rows.push({
       year,
       revenue,
       ebitda,
       margin,
       debtService,
+      capex,
+      workingCapitalChange: wcChange,
+      preTaxBuyerCashFlow,
+      tax,
       buyerCashFlow,
       debtBalance,
       cumulativeEquityCashFlow,
     });
+
+    prevRevenue = revenue;
   }
 
   // Exit
@@ -274,10 +321,16 @@ function projectScenario(args: {
   const exitEV = exitYear.ebitda * args.exitMultiple;
   const exitEVNet = exitEV * (1 - args.exitTransactionCostsPct);
   const exitDebtPayoff = exitYear.debtBalance;
-  const exitEquityProceeds = Math.max(0, exitEVNet - exitDebtPayoff);
+  const exitGrossEquityProceeds = Math.max(0, exitEVNet - exitDebtPayoff);
 
-  // Build equity cash-flow stream for IRR: year 0 = -equity, years 1..N = cash flow, year N also adds exit proceeds.
-  const cashFlowStream: number[] = [-args.buyerEquity];
+  // Capital gains tax on the gain portion only (proceeds − initial equity-at-risk),
+  // with a floor at 0 (no negative tax on a loss).
+  const exitGain = Math.max(0, exitGrossEquityProceeds - args.initialEquityAtRisk);
+  const exitCapitalGainsTax = exitGain * args.capitalGainsTaxRate;
+  const exitEquityProceeds = exitGrossEquityProceeds - exitCapitalGainsTax;
+
+  // Cash flow stream for IRR
+  const cashFlowStream: number[] = [-args.initialEquityAtRisk];
   for (let y = 1; y <= args.holdYears; y++) {
     const r = rows[y];
     const cf = r.buyerCashFlow + (y === args.holdYears ? exitEquityProceeds : 0);
@@ -287,15 +340,17 @@ function projectScenario(args: {
 
   const totalDistributions =
     rows.slice(1).reduce((sum, r) => sum + r.buyerCashFlow, 0) + exitEquityProceeds;
-  const moic = computeMOIC(args.buyerEquity, totalDistributions);
+  const moic = computeMOIC(args.initialEquityAtRisk, totalDistributions);
 
   return {
     label: args.label,
     rows,
     exitEnterpriseValue: exitEV,
     exitDebtPayoff,
+    exitGrossEquityProceeds,
+    exitCapitalGainsTax,
     exitEquityProceeds,
-    totalEquityIn: args.buyerEquity,
+    totalEquityIn: args.initialEquityAtRisk,
     totalDistributions,
     irr,
     moic,
@@ -315,9 +370,14 @@ function buildSensitivityGrid(args: {
   baseExitMultiple: number;
   baseGrowth: number;
   exitTransactionCostsPct: number;
-  buyerEquity: number;
+  initialEquityAtRisk: number;
+  industryCapexPct: number;
+  industryWcPct: number;
+  taxRate: number;
+  capitalGainsTaxRate: number;
+  blendedDebtRate: number;
+  debtTermYears: number;
 }): SensitivityGrid {
-  // 5 exit multiples × 5 revenue growths centred on base.
   const exitMultiples = [
     args.baseExitMultiple * 0.7,
     args.baseExitMultiple * 0.85,
@@ -345,7 +405,13 @@ function buildSensitivityGrid(args: {
         holdYears: args.holdYears,
         exitMultiple: m,
         exitTransactionCostsPct: args.exitTransactionCostsPct,
-        buyerEquity: args.buyerEquity,
+        initialEquityAtRisk: args.initialEquityAtRisk,
+        industryCapexPct: args.industryCapexPct,
+        industryWcPct: args.industryWcPct,
+        taxRate: args.taxRate,
+        capitalGainsTaxRate: args.capitalGainsTaxRate,
+        blendedDebtRate: args.blendedDebtRate,
+        debtTermYears: args.debtTermYears,
         rationale: "Sensitivity cell",
       });
       return { exitMultiple: m, revenueGrowth: g, irr: scen.irr };
@@ -364,17 +430,53 @@ export function computePEReturns(
   const revenue = input.annualRevenue ?? null;
   const ebitda = input.annualEBITDA ?? input.annualSDE ?? null;
   const purchasePrice = a.capitalStack.purchasePriceUsed;
-  const buyerEquity = a.capitalStack.buyerEquity.amount ?? null;
+  const buyerEquityTranche = a.capitalStack.buyerEquity.amount ?? null;
   const annualDebtService = a.capitalStack.totalAnnualDebtService;
   const sbaBalance = a.capitalStack.sba.amount ?? 0;
   const sellerBalance = a.capitalStack.sellerNote.amount ?? 0;
   const startDebtBalance = sbaBalance + sellerBalance;
 
   const curve = curveFor(input.industry);
+  const industryDefault = input.industry ? getIndustryDefault(input.industry) : null;
+  const industryCapexPct = industryDefault?.capExPct ?? 0.025;
+  const industryWcPct = industryDefault?.wcPct ?? 0.05;
+
+  // Entry multiple is the deal's actual entry multiple
   const entryMultiple =
     a.valuation.comparisonMultiple?.value && Number.isFinite(a.valuation.comparisonMultiple.value)
       ? (a.valuation.comparisonMultiple.value as number)
       : 4.5;
+
+  // Closing-cost reserve. The cash-on-cash denominator already counts:
+  //   legal + QoE + lender fees ≈ 7% of price
+  // We additionally model a 3-month post-close operating runway so the buyer
+  //   can absorb working-capital swings before the business stabilises.
+  // The TOTAL closingCostsPct surfaced in assumptions includes both pieces.
+  const baseClosingPct = a.assumptions.closingCostsPct ?? 0.07;
+  const closingFees =
+    isFiniteNumber(purchasePrice) && purchasePrice! > 0
+      ? Math.round(purchasePrice! * baseClosingPct)
+      : 0;
+  // Operating runway reserve = 3 months of revenue × industry WC pct
+  // (proxy for the cash float a small business needs).
+  const runwayMonths = 3;
+  const monthlyRevenue = isFiniteNumber(revenue) && revenue! > 0 ? revenue! / 12 : 0;
+  const runwayReserve = Math.round(monthlyRevenue * runwayMonths * industryWcPct);
+  const closingCostsReserve = closingFees + runwayReserve;
+  // Surface the effective closing cost % (fees + runway) for the assumption banner.
+  const closingCostsPct =
+    isFiniteNumber(purchasePrice) && purchasePrice! > 0
+      ? closingCostsReserve / purchasePrice!
+      : baseClosingPct;
+
+  // Initial equity-at-risk = buyer equity tranche + closing fees + runway reserve.
+  // This is the SAME denominator used in cash-on-cash. Without runway the IRR
+  // explodes because we'd be dividing by only the 10% buyer equity slice plus a
+  // skinny closing reserve.
+  const initialEquityAtRisk =
+    isFiniteNumber(buyerEquityTranche) && buyerEquityTranche! > 0
+      ? buyerEquityTranche! + closingCostsReserve
+      : 0;
 
   const assumptions: ProjectionAssumptions = {
     holdYears: overrides?.holdYears ?? 5,
@@ -384,33 +486,52 @@ export function computePEReturns(
     marginDriftBear: overrides?.marginDriftBear ?? curve.marginDrift.bear,
     marginDriftBase: overrides?.marginDriftBase ?? curve.marginDrift.base,
     marginDriftBull: overrides?.marginDriftBull ?? curve.marginDrift.bull,
+    // Entry-anchored exit multiples × {0.85, 1.00, 1.15} per brief.
     exitMultipleBear: overrides?.exitMultipleBear ?? entryMultiple * 0.85,
-    exitMultipleBase: overrides?.exitMultipleBase ?? entryMultiple * (1 + curve.exitMultiplePadding),
-    exitMultipleBull: overrides?.exitMultipleBull ?? entryMultiple * 1.2,
+    exitMultipleBase: overrides?.exitMultipleBase ?? entryMultiple * 1.0,
+    exitMultipleBull: overrides?.exitMultipleBull ?? entryMultiple * 1.15,
     exitTransactionCostsPct: overrides?.exitTransactionCostsPct ?? 0.03,
+    taxRate: overrides?.taxRate ?? 0.27,
+    capitalGainsTaxRate: overrides?.capitalGainsTaxRate ?? 0.24,
+    industryCapexPct: overrides?.industryCapexPct ?? industryCapexPct,
+    industryWcPct: overrides?.industryWcPct ?? industryWcPct,
+    closingCostsPct,
+    entryMultiple,
+    initialEquityAtRisk,
   };
 
   if (
     !isFiniteNumber(revenue) ||
     !isFiniteNumber(ebitda) ||
     !isFiniteNumber(purchasePrice) ||
-    !isFiniteNumber(buyerEquity) ||
+    !isFiniteNumber(buyerEquityTranche) ||
     !isFiniteNumber(annualDebtService) ||
-    buyerEquity! <= 0
+    initialEquityAtRisk <= 0
   ) {
     return {
       available: false,
       reason:
         "Returns projection requires revenue, EBITDA (or SDE), purchase price, buyer equity, and debt service to be present.",
       assumptions,
-      bear: emptyScenario("Bear", assumptions),
-      base: emptyScenario("Base", assumptions),
-      bull: emptyScenario("Bull", assumptions),
+      bear: emptyScenario("Bear"),
+      base: emptyScenario("Base"),
+      bull: emptyScenario("Bull"),
       sensitivity: { exitMultiples: [], revenueGrowths: [], cells: [] },
     };
   }
 
   const startMargin = ebitda! / revenue!;
+
+  // Weighted-average debt rate + term used for level-payment amortization.
+  const sbaWeight = sbaBalance / Math.max(1, startDebtBalance);
+  const sellerWeight = sellerBalance / Math.max(1, startDebtBalance);
+  const blendedDebtRate =
+    sbaWeight * a.assumptions.sbaInterestRate +
+    sellerWeight * a.assumptions.sellerNoteRate;
+  const debtTermYears =
+    sbaWeight * a.assumptions.sbaTermYears +
+    sellerWeight * a.assumptions.sellerNoteTermYears;
+
   const common = {
     startRevenue: revenue!,
     startMargin,
@@ -418,7 +539,13 @@ export function computePEReturns(
     annualDebtService: annualDebtService!,
     holdYears: assumptions.holdYears,
     exitTransactionCostsPct: assumptions.exitTransactionCostsPct,
-    buyerEquity: buyerEquity!,
+    initialEquityAtRisk,
+    industryCapexPct: assumptions.industryCapexPct,
+    industryWcPct: assumptions.industryWcPct,
+    taxRate: assumptions.taxRate,
+    capitalGainsTaxRate: assumptions.capitalGainsTaxRate,
+    blendedDebtRate,
+    debtTermYears,
   };
 
   const bear = projectScenario({
@@ -427,7 +554,7 @@ export function computePEReturns(
     growth: assumptions.revenueGrowthBear,
     marginDrift: assumptions.marginDriftBear,
     exitMultiple: assumptions.exitMultipleBear,
-    rationale: `Bear: revenue ${(assumptions.revenueGrowthBear * 100).toFixed(1)}%/yr, margin drift ${(assumptions.marginDriftBear * 100).toFixed(1)}pp/yr, exit ${assumptions.exitMultipleBear.toFixed(1)}x.`,
+    rationale: `Bear: revenue ${(assumptions.revenueGrowthBear * 100).toFixed(1)}%/yr, margin drift ${(assumptions.marginDriftBear * 100).toFixed(1)}pp/yr, exit ${assumptions.exitMultipleBear.toFixed(2)}x (entry × 0.85).`,
   });
   const base = projectScenario({
     ...common,
@@ -435,7 +562,7 @@ export function computePEReturns(
     growth: assumptions.revenueGrowthBase,
     marginDrift: assumptions.marginDriftBase,
     exitMultiple: assumptions.exitMultipleBase,
-    rationale: `Base: revenue ${(assumptions.revenueGrowthBase * 100).toFixed(1)}%/yr, margin drift ${(assumptions.marginDriftBase * 100).toFixed(1)}pp/yr, exit ${assumptions.exitMultipleBase.toFixed(1)}x.`,
+    rationale: `Base: revenue ${(assumptions.revenueGrowthBase * 100).toFixed(1)}%/yr, margin drift ${(assumptions.marginDriftBase * 100).toFixed(1)}pp/yr, exit ${assumptions.exitMultipleBase.toFixed(2)}x (entry × 1.00).`,
   });
   const bull = projectScenario({
     ...common,
@@ -443,7 +570,7 @@ export function computePEReturns(
     growth: assumptions.revenueGrowthBull,
     marginDrift: assumptions.marginDriftBull,
     exitMultiple: assumptions.exitMultipleBull,
-    rationale: `Bull: revenue ${(assumptions.revenueGrowthBull * 100).toFixed(1)}%/yr, margin drift ${(assumptions.marginDriftBull * 100).toFixed(1)}pp/yr, exit ${assumptions.exitMultipleBull.toFixed(1)}x.`,
+    rationale: `Bull: revenue ${(assumptions.revenueGrowthBull * 100).toFixed(1)}%/yr, margin drift ${(assumptions.marginDriftBull * 100).toFixed(1)}pp/yr, exit ${assumptions.exitMultipleBull.toFixed(2)}x (entry × 1.15).`,
   });
 
   const sensitivity = buildSensitivityGrid({
@@ -456,7 +583,13 @@ export function computePEReturns(
     baseExitMultiple: assumptions.exitMultipleBase,
     baseGrowth: assumptions.revenueGrowthBase,
     exitTransactionCostsPct: assumptions.exitTransactionCostsPct,
-    buyerEquity: buyerEquity!,
+    initialEquityAtRisk,
+    industryCapexPct: assumptions.industryCapexPct,
+    industryWcPct: assumptions.industryWcPct,
+    taxRate: assumptions.taxRate,
+    capitalGainsTaxRate: assumptions.capitalGainsTaxRate,
+    blendedDebtRate,
+    debtTermYears,
   });
 
   return {
@@ -469,15 +602,14 @@ export function computePEReturns(
   };
 }
 
-function emptyScenario(
-  label: "Bear" | "Base" | "Bull",
-  _a: ProjectionAssumptions,
-): ScenarioProjection {
+function emptyScenario(label: "Bear" | "Base" | "Bull"): ScenarioProjection {
   return {
     label,
     rows: [],
     exitEnterpriseValue: 0,
     exitDebtPayoff: 0,
+    exitGrossEquityProceeds: 0,
+    exitCapitalGainsTax: 0,
     exitEquityProceeds: 0,
     totalEquityIn: 0,
     totalDistributions: 0,

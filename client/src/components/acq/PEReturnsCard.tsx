@@ -87,8 +87,13 @@ export default function PEReturnsCard({ result }: Props) {
             {result.assumptions.holdYears}-year IRR / MOIC across scenarios
           </h3>
           <p className="text-xs text-muted-foreground mt-1.5 max-w-2xl">
-            Deterministic projection. Revenue growth, margin drift, and exit multiple are surfaced
-            explicitly. Cash flow sweeps to debt principal; exit at the exit multiple × terminal EBITDA.
+            Deterministic projection. CapEx scales with revenue ({(result.assumptions.industryCapexPct * 100).toFixed(1)}%),
+            ΔWC scales with revenue change ({(result.assumptions.industryWcPct * 100).toFixed(1)}%).
+            Tax {(result.assumptions.taxRate * 100).toFixed(0)}% on FCF, capital gains tax {(result.assumptions.capitalGainsTaxRate * 100).toFixed(0)}% on exit gain.
+            Exit multiples re-centred on entry {fmtMult(result.assumptions.entryMultiple)} × 0.85/1.00/1.15.
+            <br/>
+            <span className="text-foreground/80">Equity-at-risk denominator: {fmtUsd(result.assumptions.initialEquityAtRisk)}</span>
+             (buyer equity tranche + closing-cost reserve at {(result.assumptions.closingCostsPct * 100).toFixed(1)}% of price).
           </p>
         </div>
       </header>
@@ -136,7 +141,25 @@ export default function PEReturnsCard({ result }: Props) {
               ))}
             </tr>
             <tr className="border-t border-border">
-              <td className="px-3 py-1.5">Buyer CF</td>
+              <td className="px-3 py-1.5 text-muted-foreground">CapEx</td>
+              {result.base.rows.map((r) => (
+                <td key={`cx-${r.year}`} className="text-right px-3 py-1.5 text-muted-foreground">{r.year === 0 ? "—" : fmtUsd(r.capex)}</td>
+              ))}
+            </tr>
+            <tr className="border-t border-border">
+              <td className="px-3 py-1.5 text-muted-foreground">ΔWC</td>
+              {result.base.rows.map((r) => (
+                <td key={`wc-${r.year}`} className="text-right px-3 py-1.5 text-muted-foreground">{r.year === 0 ? "—" : fmtUsd(r.workingCapitalChange)}</td>
+              ))}
+            </tr>
+            <tr className="border-t border-border">
+              <td className="px-3 py-1.5 text-muted-foreground">Tax</td>
+              {result.base.rows.map((r) => (
+                <td key={`tx-${r.year}`} className="text-right px-3 py-1.5 text-muted-foreground">{r.year === 0 ? "—" : fmtUsd(r.tax)}</td>
+              ))}
+            </tr>
+            <tr className="border-t border-border">
+              <td className="px-3 py-1.5">Buyer FCF</td>
               {result.base.rows.map((r) => (
                 <td key={`cf-${r.year}`} className="text-right px-3 py-1.5">{fmtUsd(r.buyerCashFlow)}</td>
               ))}

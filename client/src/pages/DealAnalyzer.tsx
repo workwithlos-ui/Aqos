@@ -156,7 +156,7 @@ export default function DealAnalyzer() {
               className="text-xs font-mono px-2 py-1 rounded border border-border bg-card"
               title={analysis.finalBucketReason}
             >
-              {analysis.scoreLabel} {analysis.score.score === null ? "—" : `${Math.round(analysis.score.score)}/100`} · {analysis.finalBucket}
+              {analysis.scoreLabel} {analysis.score.score === null ? "—" : `${Math.round(analysis.score.score ?? 0)}/100`} · {analysis.finalBucket}
             </span>
             <span className={`text-xs font-mono px-2 py-1 rounded border ${
               analysis.verdict.confidence === "high"
@@ -595,7 +595,7 @@ export default function DealAnalyzer() {
             <div className="panel p-6">
               <h2 className="font-display text-lg font-semibold mb-3">Deterministic score</h2>
               <div className="flex items-baseline gap-3 mb-1">
-                <div className="font-display text-4xl font-semibold">{analysis.score.score === null ? "—" : Math.round(analysis.score.score)}</div>
+                <div className="font-display text-4xl font-semibold">{analysis.score.score === null ? "—" : Math.round(analysis.score.score ?? 0)}</div>
                 <div className="text-sm text-muted-foreground">{analysis.score.score === null ? `${analysis.finalBucket}` : `/ 100 · ${analysis.finalBucket}`}</div>
               </div>
               <div className="text-xs text-muted-foreground mb-3">
