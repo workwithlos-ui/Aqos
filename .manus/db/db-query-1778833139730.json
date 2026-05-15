@@ -1,0 +1,22 @@
+{
+  "query": "SELECT openId, name, role FROM users; SELECT COUNT(*) AS audit_count FROM audit_log; SELECT COUNT(*) AS version_count FROM deal_versions; SELECT COUNT(*) AS deal_count FROM deals;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute SELECT openId, name, role FROM users; SELECT COUNT(*) AS audit_count FROM audit_log; SELECT COUNT(*) AS version_count FROM deal_versions; SELECT COUNT(*) AS deal_count FROM deals;",
+  "rows": [
+    {
+      "openId": "HH9R8dErn8y8z3SgbFd7PD",
+      "name": "Los Silva",
+      "role": "admin"
+    }
+  ],
+  "messages": [
+    "audit_count",
+    "1",
+    "version_count",
+    "13",
+    "deal_count",
+    "13"
+  ],
+  "stdout": "openId\tname\trole\nHH9R8dErn8y8z3SgbFd7PD\tLos Silva\tadmin\naudit_count\n1\nversion_count\n13\ndeal_count\n13\n",
+  "stderr": "",
+  "execution_time_ms": 408
+}

@@ -72,8 +72,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
+      // Sprint B: canonical roles are partner/analyst/observer.
+      // Owner defaults to partner. Existing 'admin' rows are mapped to partner
+      // by shared/roles.ts normalizeRole() so this is a forward-only change.
+      values.role = "partner";
+      updateSet.role = "partner";
     }
 
     if (!values.lastSignedIn) {
@@ -269,4 +272,37 @@ export function computeDealDiff(
     }
   }
   return diff;
+}
+
+
+// ---------------------------------------------------------------------------
+// COMPLIANCE EXPORT HELPERS (Sprint B)
+// ---------------------------------------------------------------------------
+
+export async function listAllDealVersionsForOrg(orgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(dealVersions)
+    .where(eq(dealVersions.orgId, orgId))
+    .orderBy(desc(dealVersions.createdAt));
+}
+
+export async function listAllAuditEntriesForOrg(orgId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.orgId, orgId))
+    .orderBy(desc(auditLog.createdAt));
+}
+
+export async function getOrgRow(orgId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { orgs } = await import("../drizzle/schema");
+  const rows = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  return rows[0];
 }

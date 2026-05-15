@@ -15,7 +15,7 @@ import {
   updateDealRow,
   upsertOrgSettings,
 } from "../db";
-import { protectedProcedure, router } from "../_core/trpc";
+import { partnerProcedure, permissionProcedure, protectedProcedure, router } from "../_core/trpc";
 import type { TrpcContext } from "../_core/context";
 
 // The deal payload is a deep, evolving JSON shape (DealInput from
@@ -74,7 +74,7 @@ export const dealsRouter = router({
     }),
 
   // ---------------------------------------------------------------- upsert
-  upsert: protectedProcedure
+  upsert: permissionProcedure("deal.edit")
     .input(
       z.object({
         dealId: z.string().optional(),
@@ -172,7 +172,7 @@ export const dealsRouter = router({
     }),
 
   // ---------------------------------------------------------------- delete
-  remove: protectedProcedure
+  remove: permissionProcedure("deal.delete")
     .input(z.object({ dealId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const orgId = orgIdFromCtx(ctx);
@@ -232,7 +232,7 @@ export const dealsRouter = router({
     }),
 
   // ---------------------------------------------------------------- bulk import (migration)
-  bulkImport: protectedProcedure
+  bulkImport: permissionProcedure("deal.create")
     .input(
       z.object({
         deals: z.array(dealPayloadSchema),
@@ -297,7 +297,7 @@ export const dealsRouter = router({
     };
   }),
 
-  setAssumptions: protectedProcedure
+  setAssumptions: permissionProcedure("assumptions.edit")
     .input(z.object({ assumptions: z.record(z.string(), z.unknown()) }))
     .mutation(async ({ ctx, input }) => {
       const orgId = orgIdFromCtx(ctx);
@@ -338,5 +338,114 @@ export const dealsRouter = router({
       });
       // No audit log for active selection — high-volume, low-value churn.
       return { success: true };
+    }),
+
+  // ---------------------------------------------------------------- IC + LOI (partner only)
+  sendToIC: permissionProcedure("deal.send_to_ic")
+    .input(z.object({ dealId: z.string(), note: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const orgId = orgIdFromCtx(ctx);
+      const meta = actorMeta(ctx);
+      const existing = await getDealByDealId(orgId, input.dealId);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      const beforePayload = (existing.payload ?? {}) as Record<string, unknown>;
+      const next = { ...beforePayload, icStatus: "sent_to_ic", icSentAt: new Date().toISOString(), icNote: input.note ?? null } as Record<string, unknown>;
+      const newVersion = existing.version + 1;
+      await updateDealRow(orgId, input.dealId, { payload: next, version: newVersion, updatedByOpenId: meta.actorOpenId });
+      await insertDealVersion({ dealId: input.dealId, orgId, version: newVersion, payload: next, actorOpenId: meta.actorOpenId, reason: "ic.send" });
+      await insertAuditEntry({
+        orgId, ...meta,
+        action: "deal.update",
+        targetType: "deal",
+        targetId: input.dealId,
+        diff: computeDealDiff(beforePayload, next),
+        summary: `Sent to IC: "${existing.companyName}"${input.note ? ` — ${input.note}` : ""}`,
+      });
+      return { success: true };
+    }),
+
+  voteIC: permissionProcedure("deal.vote_ic")
+    .input(z.object({ dealId: z.string(), vote: z.enum(["approve", "reject", "abstain"]), note: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const orgId = orgIdFromCtx(ctx);
+      const meta = actorMeta(ctx);
+      const existing = await getDealByDealId(orgId, input.dealId);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      await insertAuditEntry({
+        orgId, ...meta,
+        action: "deal.update",
+        targetType: "deal",
+        targetId: input.dealId,
+        diff: [{ field: "ic.vote", before: null, after: { vote: input.vote, note: input.note ?? null } }],
+        summary: `IC vote: ${input.vote.toUpperCase()} on "${existing.companyName}"`,
+      });
+      return { success: true };
+    }),
+
+  approveLOI: permissionProcedure("deal.approve_loi")
+    .input(z.object({ dealId: z.string(), note: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const orgId = orgIdFromCtx(ctx);
+      const meta = actorMeta(ctx);
+      const existing = await getDealByDealId(orgId, input.dealId);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      const beforePayload = (existing.payload ?? {}) as Record<string, unknown>;
+      const next = { ...beforePayload, loiStatus: "approved", loiApprovedAt: new Date().toISOString(), loiApprover: meta.actorName } as Record<string, unknown>;
+      const newVersion = existing.version + 1;
+      await updateDealRow(orgId, input.dealId, { payload: next, version: newVersion, updatedByOpenId: meta.actorOpenId });
+      await insertDealVersion({ dealId: input.dealId, orgId, version: newVersion, payload: next, actorOpenId: meta.actorOpenId, reason: "loi.approve" });
+      await insertAuditEntry({
+        orgId, ...meta,
+        action: "deal.update",
+        targetType: "deal",
+        targetId: input.dealId,
+        diff: computeDealDiff(beforePayload, next),
+        summary: `LOI approved by ${meta.actorName ?? "partner"}${input.note ? ` — ${input.note}` : ""}`,
+      });
+      return { success: true };
+    }),
+
+  // ---------------------------------------------------------------- restore version
+  restoreVersion: permissionProcedure("deal.restore_version")
+    .input(z.object({ dealId: z.string(), versionId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const orgId = orgIdFromCtx(ctx);
+      const meta = actorMeta(ctx);
+      const versions = await listDealVersions(orgId, input.dealId, 500);
+      const target = versions.find((v) => v.id === input.versionId);
+      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Version not found" });
+      const existing = await getDealByDealId(orgId, input.dealId);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      const beforePayload = (existing.payload ?? {}) as Record<string, unknown>;
+      const targetPayload = (target.payload ?? {}) as Record<string, unknown>;
+      const restoredPayload: Record<string, unknown> = { ...targetPayload, id: input.dealId };
+      const newVersion = existing.version + 1;
+      const restoredCompany = typeof restoredPayload.companyName === "string" && restoredPayload.companyName.length > 0
+        ? restoredPayload.companyName
+        : existing.companyName;
+      const restoredIndustry = typeof restoredPayload.industry === "string" ? restoredPayload.industry : null;
+      const restoredStage = typeof restoredPayload.stage === "string" ? restoredPayload.stage : null;
+      await updateDealRow(orgId, input.dealId, {
+        companyName: restoredCompany,
+        industry: restoredIndustry,
+        stage: restoredStage,
+        payload: restoredPayload,
+        version: newVersion,
+        updatedByOpenId: meta.actorOpenId,
+      });
+      await insertDealVersion({
+        dealId: input.dealId, orgId, version: newVersion,
+        payload: restoredPayload, actorOpenId: meta.actorOpenId,
+        reason: `restore.v${target.version}`,
+      });
+      await insertAuditEntry({
+        orgId, ...meta,
+        action: "deal.update",
+        targetType: "deal",
+        targetId: input.dealId,
+        diff: computeDealDiff(beforePayload, restoredPayload),
+        summary: `Restored deal to version ${target.version} (snapshot ${target.id})`,
+      });
+      return { success: true, restoredFromVersion: target.version, newVersion };
     }),
 });

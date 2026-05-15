@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useRole } from "@/lib/acquisition/useRole";
 import {
   LayoutDashboard,
   Target,
@@ -13,6 +14,7 @@ import {
   CheckCircle,
   AlertTriangle,
   Layers,
+  History,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useLocation, Link } from "wouter";
@@ -38,6 +40,7 @@ const M_AND_A_NAV = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [loc] = useLocation();
+  const { role, label, isPartner } = useRole();
   return (
     <div className="min-h-screen flex">
       <aside className="hidden md:flex w-[240px] shrink-0 flex-col bg-sidebar text-sidebar-foreground p-4 gap-1 sticky top-0 h-screen border-r border-sidebar-border overflow-y-auto">
@@ -103,9 +106,42 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </div>
 
-        <div className="mt-auto rounded-xl border border-sidebar-border bg-sidebar-accent/40 p-3 text-[11px] text-sidebar-foreground/70 leading-snug">
-          <div className="font-semibold text-sidebar-foreground mb-1">Deterministic engine</div>
-          Every metric is computed by the rules engine. AI advisor only interprets verified outputs — it does not invent math.
+        {isPartner && (
+          <div className="mt-4">
+            <div className="px-2 py-2 text-[11px] uppercase tracking-[0.18em] text-sidebar-foreground/50 font-semibold mb-2">
+              Partner
+            </div>
+            <nav className="flex flex-col gap-0.5">
+              <Link href="/org/audit">
+                <div
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all",
+                    loc.startsWith("/org/audit")
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                      : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/40",
+                  )}
+                  style={{ transitionDuration: "180ms", transitionTimingFunction: "var(--ease-out)" }}
+                >
+                  <History className="size-4" />
+                  <span>Org Audit</span>
+                </div>
+              </Link>
+            </nav>
+          </div>
+        )}
+
+        <div className="mt-auto space-y-3">
+          <div
+            className="rounded-lg border border-sidebar-border bg-sidebar-accent/30 px-3 py-2 text-[11px] text-sidebar-foreground/80 flex items-center justify-between"
+            data-testid="role-badge"
+          >
+            <span className="uppercase tracking-[0.14em] text-sidebar-foreground/50">Role</span>
+            <span className="font-semibold text-sidebar-foreground" data-role={role}>{label}</span>
+          </div>
+          <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/40 p-3 text-[11px] text-sidebar-foreground/70 leading-snug">
+            <div className="font-semibold text-sidebar-foreground mb-1">Deterministic engine</div>
+            Every metric is computed by the rules engine. AI advisor only interprets verified outputs — it does not invent math.
+          </div>
         </div>
       </aside>
       <main className="flex-1 min-w-0">

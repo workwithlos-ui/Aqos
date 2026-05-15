@@ -18,6 +18,8 @@ import Integration from "./pages/Integration";
 import Governance from "./pages/Governance";
 import RedTeam from "./pages/RedTeam";
 import Underwriting from "./pages/Underwriting";
+import DealHistory from "./pages/DealHistory";
+import OrgAudit from "./pages/OrgAudit";
 import NotFound from "./pages/NotFound";
 function Router() {
   // make sure to consider if you need authentication for certain routes
@@ -41,6 +43,8 @@ function Router() {
         <Route path="/m-and-a/integration" component={Integration} />
         <Route path="/m-and-a/governance" component={Governance} />
         <Route path="/m-and-a/red-team" component={RedTeam} />
+        <Route path="/deal/:id/history" component={DealHistory} />
+        <Route path="/org/audit" component={OrgAudit} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>

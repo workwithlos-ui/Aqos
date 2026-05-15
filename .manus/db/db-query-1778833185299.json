@@ -1,0 +1,15 @@
+{
+  "query": "UPDATE users SET role = 'partner' WHERE role = 'admin'; SELECT openId, name, role FROM users;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute UPDATE users SET role = 'partner' WHERE role = 'admin'; SELECT openId, name, role FROM users;",
+  "rows": [
+    {
+      "openId": "HH9R8dErn8y8z3SgbFd7PD",
+      "name": "Los Silva",
+      "role": "partner"
+    }
+  ],
+  "messages": [],
+  "stdout": "openId\tname\trole\nHH9R8dErn8y8z3SgbFd7PD\tLos Silva\tpartner\n",
+  "stderr": "",
+  "execution_time_ms": 268
+}

@@ -5,8 +5,10 @@ import { analyzeDeal, fmtCurrencyExact, fmtMultiple } from "@/lib/acquisition";
 import { VerdictPill, DscrPill } from "@/components/acq/Verdict";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Trash2, Plus } from "lucide-react";
+import { Search, Trash2, Plus, History as HistoryIcon, Send, FileSignature } from "lucide-react";
 import { toast } from "sonner";
+import { RoleGate } from "@/components/acq/RoleGate";
+import { trpc } from "@/lib/trpc";
 
 type BucketName =
   | "All"
@@ -31,6 +33,21 @@ const BUCKETS: BucketName[] = [
 
 export default function Pipeline() {
   const { deals, assumptions, removeDeal } = useDealStore();
+  const utils = trpc.useUtils();
+  const sendToIc = trpc.deals.sendToIC.useMutation({
+    onSuccess: () => {
+      toast.success("Sent to IC");
+      utils.deals.list.invalidate();
+    },
+    onError: (e) => toast.error(`IC send failed: ${e.message}`),
+  });
+  const approveLoi = trpc.deals.approveLOI.useMutation({
+    onSuccess: () => {
+      toast.success("LOI approved");
+      utils.deals.list.invalidate();
+    },
+    onError: (e) => toast.error(`LOI approve failed: ${e.message}`),
+  });
   const [bucket, setBucket] = useState<BucketName>("All");
   const [showDemo, setShowDemo] = useState(true);
   const [q, setQ] = useState("");
@@ -206,21 +223,65 @@ export default function Pipeline() {
                   <div className="col-span-1 flex justify-end">
                     <div className="flex items-center gap-1.5">
                       <VerdictPill verdict={a.verdict.verdict} size="sm" />
-                      <button
-                        type="button"
-                        title="Remove"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (deal.id) {
-                            removeDeal(deal.id);
-                            toast.success(`${deal.companyName} removed`);
-                          }
-                        }}
-                        className="text-muted-foreground hover:text-rose-600 transition"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      <Link href={`/deal/${deal.id}/history`}>
+                        <button
+                          type="button"
+                          title="History"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-muted-foreground hover:text-foreground transition"
+                          data-testid="row-history-button"
+                        >
+                          <HistoryIcon className="size-3.5" />
+                        </button>
+                      </Link>
+                      <RoleGate perm="deal.send_to_ic">
+                        <button
+                          type="button"
+                          title="Send to IC"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (deal.id) sendToIc.mutate({ dealId: deal.id });
+                          }}
+                          className="text-muted-foreground hover:text-blue-600 transition"
+                          data-testid="row-send-to-ic"
+                        >
+                          <Send className="size-3.5" />
+                        </button>
+                      </RoleGate>
+                      <RoleGate perm="deal.approve_loi">
+                        <button
+                          type="button"
+                          title="Approve LOI"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (deal.id) approveLoi.mutate({ dealId: deal.id });
+                          }}
+                          className="text-muted-foreground hover:text-emerald-600 transition"
+                          data-testid="row-approve-loi"
+                        >
+                          <FileSignature className="size-3.5" />
+                        </button>
+                      </RoleGate>
+                      <RoleGate perm="deal.delete">
+                        <button
+                          type="button"
+                          title="Remove"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (deal.id) {
+                              removeDeal(deal.id);
+                              toast.success(`${deal.companyName} removed`);
+                            }
+                          }}
+                          className="text-muted-foreground hover:text-rose-600 transition"
+                          data-testid="row-delete"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </RoleGate>
                     </div>
                   </div>
                 </div>

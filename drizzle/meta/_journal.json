@@ -15,6 +15,13 @@
       "when": 1778831172644,
       "tag": "0001_faithful_wonder_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778832370946,
+      "tag": "0002_bizarre_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }

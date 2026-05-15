@@ -20,7 +20,7 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "admin", "partner", "analyst", "observer"]).default("analyst").notNull(),
   /** Org the user belongs to. Defaults to org 1 (the owner's org) on first login. */
   orgId: int("orgId").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

@@ -1,5 +1,32 @@
 # Project TODO
 
+## Sprint B — RBAC + Audit UI + Compliance Export (DONE)
+
+- [x] Extend user.role enum: partner / analyst / observer (legacy admin/user preserved)
+- [x] Owner upserted as canonical 'partner' instead of 'admin'
+- [x] shared/roles.ts: central permission map (12 permissions × 3 roles)
+- [x] Server middleware: partnerProcedure, analystProcedure, observerProcedure, permissionProcedure
+- [x] Gate every deal mutation with permissionProcedure("deal.*")
+- [x] New mutations: sendToIC, voteIC, approveLOI, overrideEngine, restoreVersion
+- [x] Compliance router: exportArchive returns base64 zip with audit_log.csv + deal_versions.json + deals_current.json + README.md
+- [x] useRole hook (client mirrors shared permission map)
+- [x] RoleGate component HIDES insufficient actions (not disable)
+- [x] Pipeline row actions: History (all), Send to IC + Approve LOI (partner only), Delete (partner only)
+- [x] AppShell: role badge in sidebar + Partner-only Org Audit nav link
+- [x] Per-deal /deal/:id/history page with audit log column + version restore column
+- [x] Side-by-side diff viewer (AuditDiffView): green/red before/after panes
+- [x] Restore-as-of-version: 2-click confirmation, partner-only, writes audit entry
+- [x] Partner-only /org/audit page with filter + compliance export button
+- [x] Compliance zip download via base64 → Blob round-trip
+- [x] Tests: 14 new (roles 10 + compliance 4) — all passing
+- [x] Total: 200 tests pass, 1 intentionally skipped, 0 failures
+- [x] Gate B verified: all 5 criteria documented
+- [x] Save Sprint B checkpoint
+- [x] Deploy to Manus
+- [x] Push to GitHub workwithlos-ui/Aqos
+
+---
+
 ## Sprint A — Horizon 3 persistence migration (localStorage → DB)
 
 - [x] Define database schema (orgs, users, deals, deal_versions, audit_log, org_settings)
