@@ -330,7 +330,12 @@ function assertion(label: string, expected: string, actual: string, passed: bool
 }
 
 export function runSingleSpec(def: SpecDefinition): SpecResult {
-  const analysis = analyzeDeal(def.input);
+  // Iteration 9 P0.1 — if this spec declares an invalid capital stack scenario,
+  // run analyzeDeal with those exact assumptions so the headline verdict /
+  // DSCR / score the UI displays match the invalid-stack short-circuit path,
+  // not the default-assumptions path (which silently passes).
+  const invalidCheck = def.expect.capitalStackChecks?.find((c) => c.expectInvalid);
+  const analysis = analyzeDeal(def.input, invalidCheck?.assumptions);
   const assertions: SpecAssertion[] = [];
 
   if (def.expect.verdictIn && def.expect.verdictIn.length > 0) {
