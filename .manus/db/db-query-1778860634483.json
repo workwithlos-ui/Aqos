@@ -1,0 +1,51 @@
+{
+  "query": "\nSELECT d.dealId, d.companyName, d.stage, d.version FROM deals d WHERE d.dealId = 'demo-summit-hvac';\nSELECT c.id, c.isBlocker, c.resolvedAt, LEFT(c.body, 60) as body_preview FROM comments c WHERE c.dealId = 'demo-summit-hvac';\nSELECT cf.id, cf.conflictType, cf.declarerName, cf.declaredAt FROM conflicts cf WHERE cf.dealId = 'demo-summit-hvac';\nSELECT ca.id, ca.acknowledgerName, ca.acknowledgedAt FROM conflict_acknowledgments ca WHERE ca.dealId = 'demo-summit-hvac';\nSELECT COUNT(*) as audit_entries FROM audit_log WHERE targetId IN ('demo-summit-hvac', '1', '2') AND orgId = 1;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute \nSELECT d.dealId, d.companyName, d.stage, d.version FROM deals d WHERE d.dealId = 'demo-summit-hvac';\nSELECT c.id, c.isBlocker, c.resolvedAt, LEFT(c.body, 60) as body_preview FROM comments c WHERE c.dealId = 'demo-summit-hvac';\nSELECT cf.id, cf.conflictType, cf.declarerName, cf.declaredAt FROM conflicts cf WHERE cf.dealId = 'demo-summit-hvac';\nSELECT ca.id, ca.acknowledgerName, ca.acknowledgedAt FROM conflict_acknowledgments ca WHERE ca.dealId = 'demo-summit-hvac';\nSELECT COUNT(*) as audit_entries FROM audit_log WHERE targetId IN ('demo-summit-hvac', '1', '2') AND orgId = 1;\n",
+  "rows": [
+    {
+      "dealId": "demo-summit-hvac",
+      "companyName": "Summit HVAC Services",
+      "stage": "Under Analysis",
+      "version": "1"
+    },
+    {
+      "dealId": "id",
+      "companyName": "isBlocker",
+      "stage": "resolvedAt",
+      "version": "body_preview"
+    },
+    {
+      "dealId": "1",
+      "companyName": "0",
+      "stage": "2026-04-28 11:15:00",
+      "version": "Reviewed 3 years of tax returns and P&L statements — financi"
+    },
+    {
+      "dealId": "2",
+      "companyName": "1",
+      "stage": "NULL",
+      "version": "**BLOCKER — Owner Dependency Risk**: Owner is the sole estim"
+    },
+    {
+      "dealId": "id",
+      "companyName": "conflictType",
+      "stage": "declarerName",
+      "version": "declaredAt"
+    },
+    {
+      "dealId": "1",
+      "companyName": "financial",
+      "stage": "Los Silva",
+      "version": "2026-04-15 10:00:00"
+    }
+  ],
+  "messages": [
+    "id\tacknowledgerName\tacknowledgedAt",
+    "1\tLos Silva\t2026-04-15 10:05:00",
+    "audit_entries",
+    "8"
+  ],
+  "stdout": "dealId\tcompanyName\tstage\tversion\ndemo-summit-hvac\tSummit HVAC Services\tUnder Analysis\t1\nid\tisBlocker\tresolvedAt\tbody_preview\n1\t0\t2026-04-28 11:15:00\tReviewed 3 years of tax returns and P&L statements — financi\n2\t1\tNULL\t**BLOCKER — Owner Dependency Risk**: Owner is the sole estim\nid\tconflictType\tdeclarerName\tdeclaredAt\n1\tfinancial\tLos Silva\t2026-04-15 10:00:00\nid\tacknowledgerName\tacknowledgedAt\n1\tLos Silva\t2026-04-15 10:05:00\naudit_entries\n8\n",
+  "stderr": "",
+  "execution_time_ms": 320
+}

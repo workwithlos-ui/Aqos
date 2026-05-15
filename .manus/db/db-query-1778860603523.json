@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, body, isBlocker, resolvedAt FROM comments WHERE dealId = 'demo-summit-hvac' ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute SELECT id, body, isBlocker, resolvedAt FROM comments WHERE dealId = 'demo-summit-hvac' ORDER BY id;",
+  "rows": [
+    {
+      "id": "1",
+      "body": "Reviewed 3 years of tax returns and P&L statements — financials are clean and consistent with the stated $450K SDE. Add-backs are well-documented. No red flags on the revenue side.",
+      "isBlocker": "0",
+      "resolvedAt": "2026-04-28 11:15:00"
+    },
+    {
+      "id": "2",
+      "body": "**BLOCKER — Owner Dependency Risk**: Owner is the sole estimator and holds all key client relationships. 11 years of institutional knowledge with no documented succession plan or key-man transition protocol. This must be resolved before IC — require a written transition plan and at minimum 6-month seller earnout tied to client retention before we can proceed.",
+      "isBlocker": "1",
+      "resolvedAt": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tbody\tisBlocker\tresolvedAt\n1\tReviewed 3 years of tax returns and P&L statements — financials are clean and consistent with the stated $450K SDE. Add-backs are well-documented. No red flags on the revenue side.\t0\t2026-04-28 11:15:00\n2\t**BLOCKER — Owner Dependency Risk**: Owner is the sole estimator and holds all key client relationships. 11 years of institutional knowledge with no documented succession plan or key-man transition protocol. This must be resolved before IC — require a written transition plan and at minimum 6-month seller earnout tied to client retention before we can proceed.\t1\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 280
+}

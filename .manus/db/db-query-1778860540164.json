@@ -1,0 +1,90 @@
+{
+  "query": "SELECT id, dealId, companyName, stage, orgId, createdByOpenId FROM deals LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute SELECT id, dealId, companyName, stage, orgId, createdByOpenId FROM deals LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "dealId": "demo-bluefield-hvac",
+      "companyName": "Bluefield HVAC",
+      "stage": "Under Analysis",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "2",
+      "dealId": "demo-cypress-it",
+      "companyName": "Cypress IT Partners",
+      "stage": "LOI Submitted",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "3",
+      "dealId": "demo-harborline-marine",
+      "companyName": "Harborline Marine Services",
+      "stage": "Conversation Held",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "4",
+      "dealId": "demo-summit-roofing",
+      "companyName": "Summit Roofing Co.",
+      "stage": "Financials Requested",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "5",
+      "dealId": "demo-eastside-restaurant",
+      "companyName": "Eastside Café Group",
+      "stage": "Target Identified",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "6",
+      "dealId": "test-1",
+      "companyName": "Strong Deal Test",
+      "stage": "Under Analysis",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "7",
+      "dealId": "test-2",
+      "companyName": "Fair Deal Test",
+      "stage": "Financials Requested",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "8",
+      "dealId": "test-3",
+      "companyName": "Overpriced Test",
+      "stage": "Conversation Held",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "9",
+      "dealId": "test-4",
+      "companyName": "Revenue Trap Test",
+      "stage": "Contacted",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    },
+    {
+      "id": "10",
+      "dealId": "test-5",
+      "companyName": "Small Undervalued Test",
+      "stage": "Under Analysis",
+      "orgId": "1",
+      "createdByOpenId": "HH9R8dErn8y8z3SgbFd7PD"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tdealId\tcompanyName\tstage\torgId\tcreatedByOpenId\n1\tdemo-bluefield-hvac\tBluefield HVAC\tUnder Analysis\t1\tHH9R8dErn8y8z3SgbFd7PD\n2\tdemo-cypress-it\tCypress IT Partners\tLOI Submitted\t1\tHH9R8dErn8y8z3SgbFd7PD\n3\tdemo-harborline-marine\tHarborline Marine Services\tConversation Held\t1\tHH9R8dErn8y8z3SgbFd7PD\n4\tdemo-summit-roofing\tSummit Roofing Co.\tFinancials Requested\t1\tHH9R8dErn8y8z3SgbFd7PD\n5\tdemo-eastside-restaurant\tEastside Café Group\tTarget Identified\t1\tHH9R8dErn8y8z3SgbFd7PD\n6\ttest-1\tStrong Deal Test\tUnder Analysis\t1\tHH9R8dErn8y8z3SgbFd7PD\n7\ttest-2\tFair Deal Test\tFinancials Requested\t1\tHH9R8dErn8y8z3SgbFd7PD\n8\ttest-3\tOverpriced Test\tConversation Held\t1\tHH9R8dErn8y8z3SgbFd7PD\n9\ttest-4\tRevenue Trap Test\tContacted\t1\tHH9R8dErn8y8z3SgbFd7PD\n10\ttest-5\tSmall Undervalued Test\tUnder Analysis\t1\tHH9R8dErn8y8z3SgbFd7PD\n",
+  "stderr": "",
+  "execution_time_ms": 264
+}

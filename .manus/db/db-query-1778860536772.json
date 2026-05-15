@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, name, ownerOpenId FROM orgs LIMIT 5; SELECT id, openId, name, role, orgId FROM users LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute SELECT id, name, ownerOpenId FROM orgs LIMIT 5; SELECT id, openId, name, role, orgId FROM users LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Default Org",
+      "ownerOpenId": "system"
+    }
+  ],
+  "messages": [
+    "id\topenId\tname\trole\torgId",
+    "1\tHH9R8dErn8y8z3SgbFd7PD\tLos Silva\tpartner\t1"
+  ],
+  "stdout": "id\tname\townerOpenId\n1\tDefault Org\tsystem\nid\topenId\tname\trole\torgId\n1\tHH9R8dErn8y8z3SgbFd7PD\tLos Silva\tpartner\t1\n",
+  "stderr": "",
+  "execution_time_ms": 941
+}

@@ -218,7 +218,7 @@ export const dealsRouter = router({
     }),
 
   // ---------------------------------------------------------------- audit log
-  auditAll: protectedProcedure
+  auditAll: permissionProcedure("audit.view_org")
     .input(z.object({ limit: z.number().int().min(1).max(500).default(100) }).optional())
     .query(async ({ ctx, input }) => {
       const orgId = orgIdFromCtx(ctx);
