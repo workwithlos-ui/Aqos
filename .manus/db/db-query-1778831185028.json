@@ -1,0 +1,9 @@
+{
+  "query": "INSERT IGNORE INTO orgs (id, name, ownerOpenId) VALUES (1, 'Default Org', 'system');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute INSERT IGNORE INTO orgs (id, name, ownerOpenId) VALUES (1, 'Default Org', 'system');",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 431
+}

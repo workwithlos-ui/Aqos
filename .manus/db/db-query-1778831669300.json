@@ -1,0 +1,17 @@
+{
+  "query": "SELECT (SELECT COUNT(*) FROM deals) AS deals_count, (SELECT COUNT(*) FROM deal_versions) AS versions_count, (SELECT COUNT(*) FROM audit_log) AS audit_count, (SELECT COUNT(*) FROM users) AS users_count, (SELECT COUNT(*) FROM orgs) AS orgs_count;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute SELECT (SELECT COUNT(*) FROM deals) AS deals_count, (SELECT COUNT(*) FROM deal_versions) AS versions_count, (SELECT COUNT(*) FROM audit_log) AS audit_count, (SELECT COUNT(*) FROM users) AS users_count, (SELECT COUNT(*) FROM orgs) AS orgs_count;",
+  "rows": [
+    {
+      "deals_count": "13",
+      "versions_count": "13",
+      "audit_count": "1",
+      "users_count": "1",
+      "orgs_count": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "deals_count\tversions_count\taudit_count\tusers_count\torgs_count\n13\t13\t1\t1\t1\n",
+  "stderr": "",
+  "execution_time_ms": 280
+}

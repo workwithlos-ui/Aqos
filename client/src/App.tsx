@@ -4,6 +4,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AppShell } from "./components/acq/AppShell";
+import { AuthGate } from "./components/acq/AuthGate";
 import Dashboard from "./pages/Dashboard";
 import Pipeline from "./pages/Pipeline";
 import DealAnalyzer from "./pages/DealAnalyzer";
@@ -18,9 +19,10 @@ import Governance from "./pages/Governance";
 import RedTeam from "./pages/RedTeam";
 import Underwriting from "./pages/Underwriting";
 import NotFound from "./pages/NotFound";
-
 function Router() {
+  // make sure to consider if you need authentication for certain routes
   return (
+    <AuthGate>
     <AppShell>
       <Switch>
         <Route path="/" component={Dashboard} />
@@ -42,6 +44,7 @@ function Router() {
         <Route component={NotFound} />
       </Switch>
     </AppShell>
+    </AuthGate>
   );
 }
 

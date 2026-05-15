@@ -1,0 +1,31 @@
+{
+  "query": "SHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2jz1YpzQCSkhpMn.22dced80cd42 --database KQxG4oGcxF7TcvFNpiFwWu --execute SHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_KQxG4oGcxF7TcvFNpiFwWu": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_KQxG4oGcxF7TcvFNpiFwWu": "audit_log"
+    },
+    {
+      "Tables_in_KQxG4oGcxF7TcvFNpiFwWu": "deal_versions"
+    },
+    {
+      "Tables_in_KQxG4oGcxF7TcvFNpiFwWu": "deals"
+    },
+    {
+      "Tables_in_KQxG4oGcxF7TcvFNpiFwWu": "org_settings"
+    },
+    {
+      "Tables_in_KQxG4oGcxF7TcvFNpiFwWu": "orgs"
+    },
+    {
+      "Tables_in_KQxG4oGcxF7TcvFNpiFwWu": "users"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_KQxG4oGcxF7TcvFNpiFwWu\n__drizzle_migrations\naudit_log\ndeal_versions\ndeals\norg_settings\norgs\nusers\n",
+  "stderr": "",
+  "execution_time_ms": 404
+}
