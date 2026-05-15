@@ -436,8 +436,8 @@ export function runSingleSpec(def: SpecDefinition): SpecResult {
       assertion(
         `Score ≥ ${def.expect.minScore}`,
         `>= ${def.expect.minScore}`,
-        String(Math.round(analysis.score.score)),
-        analysis.score.score >= def.expect.minScore,
+        String(Math.round((analysis.score.score) ?? 0)),
+        ((analysis.score.score) ?? 0) >= def.expect.minScore,
       ),
     );
   }
@@ -446,8 +446,8 @@ export function runSingleSpec(def: SpecDefinition): SpecResult {
       assertion(
         `Score ≤ ${def.expect.maxScore}`,
         `<= ${def.expect.maxScore}`,
-        String(Math.round(analysis.score.score)),
-        analysis.score.score <= def.expect.maxScore,
+        String(Math.round((analysis.score.score) ?? 0)),
+        ((analysis.score.score) ?? 0) <= def.expect.maxScore,
       ),
     );
   }
@@ -492,7 +492,7 @@ export function runSingleSpec(def: SpecDefinition): SpecResult {
     name: def.name,
     passed: assertions.every((a) => a.passed),
     verdict: analysis.verdict.verdict,
-    score: analysis.score.score,
+    score: analysis.score.score ?? undefined,
     dscrAfter: dscr,
     assertions,
   };

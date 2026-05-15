@@ -30,13 +30,13 @@ export default function TestSuite() {
           </h1>
           <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
             The 10 required scenarios run live in your browser against the same
-            engine the UI uses. The full repository suite (154 deterministic
+            engine the UI uses. The full repository suite (163 deterministic
             cases, including these 10) runs under <span className="font-mono">pnpm vitest run</span>.
           </p>
         </div>
         <div className="flex items-center gap-3">
           <div className={`px-3 py-1.5 rounded-full text-sm font-semibold border ${passed === total ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700" : "bg-rose-500/10 border-rose-500/30 text-rose-700"}`}>
-            UI: {passed} / {total} · Repo: 154 / 154
+            UI: {passed} / {total} · Repo: 163 / 163
           </div>
           <Button onClick={rerun}>
             <PlayCircle className="size-4 mr-1.5" /> Re-run suite

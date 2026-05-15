@@ -1,36 +1,23 @@
-# Iteration 8 — Critical Brief (AnomalyBus + Imputation Discipline + 6 P0 + WC bug)
+# Iteration 9 — P0 regressions + PE-grade returns + LOI .docx
 
-## Architectural
-- [ ] AnomalyBus: single `analysis.anomalies` array consumed by:
-  - [ ] Analyzer page yellow banner under headline verdict
-  - [ ] Red Team objections (no generic placeholders when anomalies exist)
-  - [ ] IC memo Executive Summary first paragraph
-  - [ ] Exports header
-  - [ ] Governance gates
-  - [ ] Copilot (already works — keep)
+## P0 (fix before any new work)
+- [ ] P0.1 Test 10: invalid capital stack → CANNOT UNDERWRITE, score/DSCR null on UI
+- [ ] P0.2 Exports memoization: bidirectional (switch A→B→A→B→A, header matches every time)
+- [ ] P0.3 Verdict pipeline: buyerCashFlow.afterStandby < 0 → forced ≤ RENEGOTIATE
+- [ ] P0.4 Industry display name capitalized (HVAC, Plumbing, Restaurant) on banner / Red Team / Copilot / IC memo
 
-## Imputation discipline (industry-time, not page-time)
-- [ ] On industry selection, if capEx null → revenue × industryTable[industry].capexPct
-- [ ] On industry selection, if WC reserve null → revenue × industryTable[industry].wcPct
-- [ ] Tag both with assumption badge "assumed (industry default)"
-- [ ] Inline override link with current default %
-- [ ] HVAC defaults: capexPct 0.025, wcPct 0.07
+## PE-grade returns math
+- [ ] Exit Assumptions panel (hold period, exit multiple, EBITDA growth bear/base/bull)
+- [ ] 5-Year Projection Table (Y0–Y5: revenue, EBITDA, debt service, CapEx, WC, cash flow, cumulative)
+- [ ] Exit Analysis card (Exit EV → equity proceeds → MOIC → IRR, three scenarios)
+- [ ] Sensitivity Grid (SBA rate × exit multiple, IRR shaded)
 
-## P0 ship-blockers
-- [ ] 3.1 Asking-below-benchmark YELLOW BANNER on /analyze
-- [ ] 3.2 EBITDA margin anomaly + badge "needs-verification"
-- [ ] 3.3 Risk panel copy: "5 of 5 engine-inferred · 0 of 5 buyer-confirmed"
-- [ ] 3.4 Invalid capital stack → CANNOT UNDERWRITE with null score/DSCR
-- [ ] 3.5 Red Team objections consume anomalies array
-- [ ] 3.6 SaveStatus: "Saving…" → "Saved" → "Saved · Xs ago" within 500ms
+## Lifecycle
+- [ ] LOI .docx generator with merge fields
 
-## Bug fix
-- [ ] WC peg formatter: render $175,000, not $7
-
-## Verification protocol
-- [ ] UI regression tests for each fix (DealAnalyzer renders the anomaly)
-- [ ] Live smoke test paste on deployed URL
-- [ ] Hash receipt (deployed vs GitHub)
-- [ ] Per-item file + line pointers
-- [ ] Honest delta
-- [ ] All 10 binary acceptance criteria
+## Verification
+- [ ] UI regression test: exports A→B→A→B→A name match
+- [ ] Regression test: negative buyer cash flow → RENEGOTIATE
+- [ ] Regression test: industry capitalization in IC memo
+- [ ] Live smoke test on deployed URL
+- [ ] Hash receipt (deployed = GitHub)

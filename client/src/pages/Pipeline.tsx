@@ -196,7 +196,7 @@ export default function Pipeline() {
                     className="col-span-1 text-center text-sm font-semibold flex flex-col items-center"
                     title={a.verdict.confidenceReason}
                   >
-                    <span>{Math.round(a.score.score)}</span>
+                    <span>{Math.round((a.score.score) ?? 0)}</span>
                     {a.verdict.isPreliminary && (
                       <span className="text-[9px] uppercase tracking-wider text-amber-700 dark:text-amber-300 font-normal">
                         prelim

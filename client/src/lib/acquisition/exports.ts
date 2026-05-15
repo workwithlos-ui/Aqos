@@ -28,7 +28,7 @@ function header(a: DealAnalysis, title: string): string {
   const gateSummary = a.acquisitionPriorityGate.passed
     ? "Acquisition Priority gate: ALL CHECKS PASS."
     : `Acquisition Priority gate: NOT PROMOTED — ${a.acquisitionPriorityGate.reasons.join("; ")}.`;
-  return `# ${title} — ${a.companyName} ${tag}\n\nGenerated: ${today}\nDeal Verdict: **${a.verdict.verdict}**${preliminary}\n${a.scoreLabel}: ${Math.round(a.score.score)} / 100 (${a.finalBucket})\nBucket reason: ${a.finalBucketReason}\n${gateSummary}\nConfidence: ${a.verdict.confidence} — ${a.verdict.confidenceReason}\n`;
+  return `# ${title} — ${a.companyName} ${tag}\n\nGenerated: ${today}\nDeal Verdict: **${a.verdict.verdict}**${preliminary}\n${a.scoreLabel}: ${Math.round((a.score.score) ?? 0)} / 100 (${a.finalBucket})\nBucket reason: ${a.finalBucketReason}\n${gateSummary}\nConfidence: ${a.verdict.confidence} — ${a.verdict.confidenceReason}\n`;
 }
 
 export function generateICMemo(a: DealAnalysis): ExportPayload {
@@ -120,7 +120,7 @@ export function generateBrokerEmail(a: DealAnalysis): ExportPayload {
     lines.push("");
     lines.push(a.missingData.criticalMissing.concat(a.missingData.importantMissing).slice(0, 8).map((m) => `  • ${m}`).join("\n"));
   } else {
-    lines.push(`Thanks for sending ${a.companyName}. Initial underwriting is constructive (engine verdict: ${a.verdict.verdict}, score ${Math.round(a.score.score)}/100). To move toward LOI, could you share the items below at your convenience?`);
+    lines.push(`Thanks for sending ${a.companyName}. Initial underwriting is constructive (engine verdict: ${a.verdict.verdict}, score ${Math.round((a.score.score) ?? 0)}/100). To move toward LOI, could you share the items below at your convenience?`);
     lines.push("");
     lines.push(a.missingData.importantMissing.slice(0, 6).map((m) => `  • ${m}`).join("\n"));
   }
@@ -182,7 +182,7 @@ export function generateKillMemo(a: DealAnalysis): ExportPayload {
   lines.push(header(a, "Deal Kill Memo"));
   lines.push(`## Why we're passing\n${a.verdict.rationale}`);
   lines.push(`## Hard blockers\n${a.verdict.blockers.map((b) => `- ${b}`).join("\n") || "- None recorded."}`);
-  lines.push(`## Snapshot at time of kill\n- Earnings: ${money(a.earningsUsed)} (${a.earningsBasis})\n- Asking: ${money(a.capitalStack.purchasePriceUsed)}\n- DSCR after standby: ${a.dscrPair.afterStandby.display}\n- Score: ${Math.round(a.score.score)}/100`);
+  lines.push(`## Snapshot at time of kill\n- Earnings: ${money(a.earningsUsed)} (${a.earningsBasis})\n- Asking: ${money(a.capitalStack.purchasePriceUsed)}\n- DSCR after standby: ${a.dscrPair.afterStandby.display}\n- Score: ${Math.round((a.score.score) ?? 0)}/100`);
   return {
     filename: `${slug(a.companyName)}-kill-memo.md`,
     title: "Deal Kill Memo",
@@ -277,7 +277,7 @@ function generateOnePager(a: DealAnalysis): ExportPayload {
   const lines: string[] = [];
   lines.push(`# ${a.companyName} — Deal One-Pager\n`);
   lines.push(`**Verdict:** ${a.verdict.verdict} ${a.verdict.isPreliminary ? "(PRELIMINARY)" : ""}`);
-  lines.push(`**Score:** ${a.scoreLabel} ${Math.round(a.score.score)}/100 | **Confidence:** ${a.verdict.confidence}\n`);
+  lines.push(`**Score:** ${a.scoreLabel} ${Math.round((a.score.score) ?? 0)}/100 | **Confidence:** ${a.verdict.confidence}\n`);
   lines.push(`| Metric | Value |\n|--------|-------|\n| Revenue | ${money(a.ebitdaMargin.inputs.Revenue as number ?? a.sdeMargin.inputs.Revenue as number)} |\n| Earnings (${a.earningsBasis}) | ${money(a.earningsUsed)} |\n| EV/${a.earningsBasis} | ${mult(a.earningsBasis === "EBITDA" ? a.evToEBITDA.value : a.evToSDE.value)} |\n| DSCR (post-standby) | ${a.dscrPair.afterStandby.display} |\n| Thesis Fit | ${a.thesis.fitScore}/100 (${a.thesis.bucket}) |\n| Governance | ${a.governance.passedCount}/${a.governance.totalCount} gates |\n| Freeze Status | ${a.freeze.status.toUpperCase()} |`);
   return {
     filename: `${slug(a.companyName)}-one-pager.md`,

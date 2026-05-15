@@ -168,7 +168,7 @@ export default function Underwriting() {
             <div>
               <CardTitle className="text-2xl font-display">{analysis.companyName || <span className="text-muted-foreground">missing</span>}</CardTitle>
               <CardDescription>
-                {analysis.scoreLabel}: <span className="font-semibold text-foreground">{Math.round(analysis.score.score)}/100</span>
+                {analysis.scoreLabel}: <span className="font-semibold text-foreground">{Math.round((analysis.score.score) ?? 0)}/100</span>
                 {" · "}Confidence: <span className="font-semibold text-foreground">{analysis.verdict.confidence}</span>
                 {" · "}{analysis.verdict.confidenceReason}
               </CardDescription>

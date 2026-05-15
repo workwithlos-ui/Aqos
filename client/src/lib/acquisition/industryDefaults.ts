@@ -115,3 +115,24 @@ export function imputeWorkingCapitalDefaults(args: {
     wcSource,
   };
 }
+
+/**
+ * Iteration 9 P0.4 — Industry display name capitalization.
+ *
+ * Every UI surface (Analyzer banner, Red Team objections, Copilot output,
+ * IC memo, exports) must render the industry with proper capitalization.
+ * Some industries are uppercase ("HVAC"), some Title Case ("Plumbing"),
+ * some multi-word ("IT Services"). This helper is the single source of
+ * truth used across the codebase.
+ */
+export function industryDisplayName(industry: string | null | undefined): string {
+  if (!industry) return "industry";
+  const trimmed = industry.toLowerCase().trim();
+  const def = INDUSTRY_DEFAULTS[trimmed];
+  if (def) return def.label;
+  // Fallback: Title Case each word.
+  return trimmed
+    .split(/\s+/)
+    .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : ""))
+    .join(" ");
+}

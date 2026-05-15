@@ -137,7 +137,7 @@ export default function Dashboard() {
                       <div className="text-xs text-muted-foreground truncate">
                         {a.valuation.benchmark?.industryLabel ?? "Industry missing"} ·
                         {" "}{a.earningsBasis} {a.earningsUsed !== null ? fmtCurrencyExact(a.earningsUsed) : "missing"} ·
-                        Score {Math.round(a.score.score)}/100
+                        Score {Math.round((a.score.score) ?? 0)}/100
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -248,7 +248,7 @@ function BucketCard({
               <li className="text-sm flex items-center justify-between gap-2 hover:bg-background/60 rounded px-2 py-1.5">
                 <span className="truncate">{a.companyName}</span>
                 <span className="text-xs text-muted-foreground">
-                  {Math.round(a.score.score)}/100
+                  {Math.round((a.score.score) ?? 0)}/100
                 </span>
               </li>
             </Link>

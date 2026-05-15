@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { VerdictPill, DscrPill } from "@/components/acq/Verdict";
 import { AnomalyBannerStack } from "@/components/acq/AnomalyBanner";
 import { SaveStatus, type SaveStatusState } from "@/components/acq/SaveStatus";
+import PEReturnsCard from "@/components/acq/PEReturnsCard";
 import { getIndustryDefault } from "@/lib/acquisition/industryDefaults";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, Save, Trash2, TrendingDown, CheckCircle2, XCircle, Info } from "lucide-react";
@@ -155,7 +156,7 @@ export default function DealAnalyzer() {
               className="text-xs font-mono px-2 py-1 rounded border border-border bg-card"
               title={analysis.finalBucketReason}
             >
-              {analysis.scoreLabel} {Math.round(analysis.score.score)}/100 · {analysis.finalBucket}
+              {analysis.scoreLabel} {analysis.score.score === null ? "—" : `${Math.round(analysis.score.score)}/100`} · {analysis.finalBucket}
             </span>
             <span className={`text-xs font-mono px-2 py-1 rounded border ${
               analysis.verdict.confidence === "high"
@@ -594,8 +595,8 @@ export default function DealAnalyzer() {
             <div className="panel p-6">
               <h2 className="font-display text-lg font-semibold mb-3">Deterministic score</h2>
               <div className="flex items-baseline gap-3 mb-1">
-                <div className="font-display text-4xl font-semibold">{Math.round(analysis.score.score)}</div>
-                <div className="text-sm text-muted-foreground">/ 100 · {analysis.finalBucket}</div>
+                <div className="font-display text-4xl font-semibold">{analysis.score.score === null ? "—" : Math.round(analysis.score.score)}</div>
+                <div className="text-sm text-muted-foreground">{analysis.score.score === null ? `${analysis.finalBucket}` : `/ 100 · ${analysis.finalBucket}`}</div>
               </div>
               <div className="text-xs text-muted-foreground mb-3">
                 <span className="font-semibold">{analysis.scoreLabel}</span>
@@ -823,8 +824,7 @@ export default function DealAnalyzer() {
               </div>
               <div className="text-xs text-muted-foreground mb-2">
                 <span className="font-semibold">Structure:</span> {analysis.recommendedOffer.preferredStructure}
-              </div>
-              <p className="text-xs leading-relaxed text-muted-foreground">{analysis.recommendedOffer.rationale}</p>
+              </div>              <p className="text-xs leading-relaxed text-muted-foreground">{analysis.recommendedOffer.rationale}</p>
               {analysis.recommendedOffer.warnings.map((w) => (
                 <div key={w} className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 mt-1">
                   <AlertTriangle className="size-3 mt-0.5" /> {w}
@@ -833,8 +833,10 @@ export default function DealAnalyzer() {
             </div>
           </div>
 
-          {/* ── Auto-generated Diligence Checklist ──────────────────────── */}
-          <div className="panel p-6">
+          {/* ── PE-grade Returns Projection (Iteration 9) ─────────────────── */}
+          <PEReturnsCard result={analysis.peReturns} />
+
+          {/* ── Auto-generated Diligence Checklist ────────────────────────── */}          <div className="panel p-6">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-display text-lg font-semibold">Auto-generated diligence checklist</h2>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">

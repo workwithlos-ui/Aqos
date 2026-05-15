@@ -17,6 +17,8 @@ import {
   selectPurchasePrice,
 } from "./dealMath";
 import { getBenchmarkPair } from "./benchmarkMultiples";
+import { industryDisplayName } from "./industryDefaults";
+import { computePEReturns } from "./peReturns";
 import { scoreRisk } from "./riskScoring";
 import { detectMissingData } from "./missingData";
 import { scoreDeal } from "./dealScoring";
@@ -109,7 +111,7 @@ function valuationFor(
     // direct comparison.
     compatibility = "reference_only";
     warnings.push(
-      `Benchmark for ${input.industry} is only available in ${benchmark.basis}, but earnings here are reported as ${earningsBasis}. Showing the band for reference only — band position is not used to score this deal.`,
+      `Benchmark for ${industryDisplayName(input.industry)} is only available in ${benchmark.basis}, but earnings here are reported as ${earningsBasis}. Showing the band for reference only — band position is not used to score this deal.`,
     );
   }
 
@@ -118,7 +120,7 @@ function valuationFor(
   const compMultiplePresent =
     comparisonMultiple.value !== null && Number.isFinite(comparisonMultiple.value);
   if (compatibility === "basis_match" && !compMultiplePresent) {
-    const ind = input.industry ? `${input.industry} ` : "";
+    const ind = input.industry ? `${industryDisplayName(input.industry)} ` : "";
     warnings.push(
       `${ind}benchmark is ${benchmark!.basis}-based. Add ${benchmark!.basis} to calculate a valid EV/${benchmark!.basis} comparison. Benchmark value range suppressed until ${benchmark!.basis} is provided.`,
     );
@@ -303,6 +305,27 @@ export function analyzeDeal(
     dataQuality: { score: 0, label: "Very Low", fieldsProvided: 0, fieldsTotal: 0, criticalGaps: [], importantGaps: [], rationale: "" },
     assumptionBadges: [],
     anomalies: [],
+    peReturns: {
+      available: false,
+      reason: "Pending",
+      assumptions: {
+        holdYears: 5,
+        revenueGrowthBear: 0,
+        revenueGrowthBase: 0,
+        revenueGrowthBull: 0,
+        marginDriftBear: 0,
+        marginDriftBase: 0,
+        marginDriftBull: 0,
+        exitMultipleBear: 0,
+        exitMultipleBase: 0,
+        exitMultipleBull: 0,
+        exitTransactionCostsPct: 0,
+      },
+      bear: { label: "Bear", rows: [], exitEnterpriseValue: 0, exitDebtPayoff: 0, exitEquityProceeds: 0, totalEquityIn: 0, totalDistributions: 0, irr: null, moic: null, rationale: "" },
+      base: { label: "Base", rows: [], exitEnterpriseValue: 0, exitDebtPayoff: 0, exitEquityProceeds: 0, totalEquityIn: 0, totalDistributions: 0, irr: null, moic: null, rationale: "" },
+      bull: { label: "Bull", rows: [], exitEnterpriseValue: 0, exitDebtPayoff: 0, exitEquityProceeds: 0, totalEquityIn: 0, totalDistributions: 0, irr: null, moic: null, rationale: "" },
+      sensitivity: { exitMultiples: [], revenueGrowths: [], cells: [] },
+    },
   };
 
   const scoreResult = scoreDeal({ input, analysis: partial });
@@ -345,12 +368,17 @@ export function analyzeDeal(
   // P0 ship-blocker 3.4 — invalid capital stack short-circuits to Cannot
   // Underwrite *and* blanks the score / DSCR so the UI cannot pretend the
   // deal underwrites.  Test 10 (capital stack = 105%) relies on this.
+  // Iteration 9 P0.1 — also overwrite verdict + finalBucket + scoreLabel so
+  // every UI surface (headline card, IC memo, copilot) reads "CANNOT
+  // UNDERWRITE" with the same reconcile reason, instead of the stale verdict
+  // computed before the stack was validated.
   if (!partial.capitalStack.pctValid) {
+    const stackReason = `Capital stack reconciles to ${(partial.capitalStack.pctTotal * 100).toFixed(2)}%, must equal 100%.`;
     partial.score = {
       ...partial.score,
-      status: "review_required",
-      score: 0,
-      blockerReason: `Capital stack reconciles to ${(partial.capitalStack.pctTotal * 100).toFixed(2)}%, must equal 100%.`,
+      status: "cannot_underwrite",
+      score: null,
+      blockerReason: stackReason,
     };
     const blanked = {
       value: null,
@@ -364,6 +392,19 @@ export function analyzeDeal(
       duringStandby: blanked,
       afterStandby: blanked,
     };
+    partial.verdict = {
+      ...partial.verdict,
+      verdict: "CANNOT UNDERWRITE",
+      rationale: `CANNOT UNDERWRITE — ${stackReason}`,
+      confidence: "low",
+      confidenceReason: stackReason,
+      isPreliminary: true,
+      blockers: [stackReason, ...partial.verdict.blockers],
+    };
+    partial.scoreLabel = "Score";
+    partial.finalBucket = "Cannot Underwrite";
+    partial.finalBucketReason = `Cannot Underwrite — ${stackReason}`;
+    partial.score.bucket = "Cannot Underwrite";
   }
 
   partial.nextActions = nextActionsFor(partial);
@@ -373,6 +414,67 @@ export function analyzeDeal(
   partial.maxSupportablePP = computeMaxSupportablePP(input, partial);
   partial.stressTest = computeStressTest(input, partial);
   partial.refinedVerdict = computeRefinedVerdict(partial);
+
+  // Iteration 9 P0.3 — PE-grade verdict pipeline: if the buyer's cash flow
+  // after debt service is negative once required CapEx + WC reserves are
+  // honored, the deal CANNOT be "Acquisition Priority" or even "Diligence
+  // Priority". A lender DSCR ≥ 1.25x looks fine on paper but the buyer is
+  // bleeding cash. Force the verdict down to RENEGOTIATE (or KILL when the
+  // shortfall is severe), and update finalBucket + headline labels.
+  if (
+    partial.capitalStack.pctValid &&
+    partial.buyerCashFlow.buyerCashFlow.value !== null &&
+    partial.buyerCashFlow.buyerCashFlow.value < 0
+  ) {
+    const shortfall = partial.buyerCashFlow.buyerCashFlow.value;
+    const earnings = partial.earningsUsed ?? 0;
+    const severeThreshold = -Math.abs(earnings) * 0.15; // 15% of earnings = severe
+    const cashFlowReason = `Buyer cash flow after debt service is ${fmtCurrencyExact(shortfall)} once industry-default CapEx + WC reserves are honored — the deal does not self-fund.`;
+
+    if (shortfall <= severeThreshold) {
+      // Severe — force KILL
+      partial.verdict = {
+        ...partial.verdict,
+        verdict: "KILL",
+        rationale: `KILL — ${cashFlowReason} Shortfall exceeds 15% of earnings; renegotiation cannot close the gap.`,
+        confidence: partial.verdict.confidence,
+        blockers: [cashFlowReason, ...partial.verdict.blockers],
+      };
+      partial.finalBucket = "Kill/Pause";
+      partial.finalBucketReason = `Kill/Pause — ${cashFlowReason}`;
+      partial.score.bucket = "Kill/Pause";
+      partial.refinedVerdict = {
+        verdict: "Walk Away",
+        buyerReason: cashFlowReason,
+        conditions: ["Re-anchor purchase price 15%+ lower", "Or pass on this deal"],
+        urgency: "high",
+      };
+    } else if (
+      partial.verdict.verdict === "PURSUE" ||
+      partial.verdict.verdict === "DILIGENCE PRIORITY" ||
+      partial.verdict.verdict === "PURSUE WITH CAUTION"
+    ) {
+      partial.verdict = {
+        ...partial.verdict,
+        verdict: "RENEGOTIATE",
+        rationale: `RENEGOTIATE — ${cashFlowReason}`,
+        blockers: [cashFlowReason, ...partial.verdict.blockers],
+      };
+      partial.finalBucket = "Watch";
+      partial.finalBucketReason = `Renegotiate — ${cashFlowReason}`;
+      partial.score.bucket = "Watch";
+      partial.refinedVerdict = {
+        verdict: "Renegotiate",
+        buyerReason: cashFlowReason,
+        conditions: [
+          "Re-anchor purchase price near benchmark median or buyer-DSCR-supportable maximum",
+          "Extend seller note standby or add earnout to cover CapEx + WC gap",
+          "Verify EBITDA add-backs and capex run-rate before resubmitting",
+        ],
+        urgency: "high",
+      };
+    }
+  }
   partial.recommendedOffer = computeRecommendedOffer(partial);
   partial.autoDiligence = computeAutoDiligence(input, partial);
   partial.dataQuality = computeDataQuality(input, partial);
@@ -382,6 +484,9 @@ export function analyzeDeal(
   partial.anomalies = computeAnomalies(input, partial);
   // Re-derive Red Team objections using the final anomaly set.
   partial.redTeam = computeRedTeam(partial);
+
+  // Iteration 9 — PE-grade returns projection (5yr IRR/MOIC + sensitivity).
+  partial.peReturns = computePEReturns(input, partial);
 
   return partial;
 }

@@ -8,6 +8,7 @@
 // reasoning trace.
 
 import type { DealInput, RiskFactor, RiskResult } from "./types";
+import { industryDisplayName } from "./industryDefaults";
 
 const LEVELS: RiskFactor["level"][] = [
   "Low",
@@ -93,13 +94,14 @@ function deriveIndustryRisk(input: DealInput): {
 } {
   const ind = input.industry?.toLowerCase() ?? null;
   if (!ind) return { score: null, rationale: "Industry not provided." };
+  const label = industryDisplayName(input.industry);
   if (/restaurant|retail/.test(ind))
-    return { score: 4, rationale: `Cyclical / margin-thin industry: ${input.industry}.` };
+    return { score: 4, rationale: `Cyclical / margin-thin industry: ${label}.` };
   if (/it services|software|saas/.test(ind))
-    return { score: 2, rationale: `Resilient services industry: ${input.industry}.` };
+    return { score: 2, rationale: `Resilient services industry: ${label}.` };
   if (/plumbing|hvac|electrical|roofing|landscaping|auto repair/.test(ind))
-    return { score: 2, rationale: `Essential trade industry: ${input.industry}.` };
-  return { score: 3, rationale: `Industry baseline risk: ${input.industry}.` };
+    return { score: 2, rationale: `Essential trade industry: ${label}.` };
+  return { score: 3, rationale: `Industry baseline risk: ${label}.` };
 }
 
 function deriveOperationalComplexity(input: DealInput): {

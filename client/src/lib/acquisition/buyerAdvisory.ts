@@ -26,7 +26,7 @@ import {
   selectEarnings,
   fmtCurrencyExact,
 } from "./dealMath";
-import { getIndustryDefault } from "./industryDefaults";
+import { getIndustryDefault, industryDisplayName } from "./industryDefaults";
 import type {
   DealAnalysis,
   DealInput,
@@ -950,7 +950,7 @@ export function computeAssumptionBadges(
     detail:
       a.ebitdaMargin.value !== null
         ? marginNeedsCheck && marginNorm
-          ? `${fmtPct(a.ebitdaMargin.value)} is above ${input.industry} industry high of ${fmtPct(marginNorm.max)}. Verify W-2 add-back, CapEx run-rate, related-party transactions, one-time revenue.`
+          ? `${fmtPct(a.ebitdaMargin.value)} is above ${industryDisplayName(input.industry)} industry high of ${fmtPct(marginNorm.max)}. Verify W-2 add-back, CapEx run-rate, related-party transactions, one-time revenue.`
           : `${fmtPct(a.ebitdaMargin.value)} — engine-calculated from user inputs.`
         : "Cannot calculate — revenue or EBITDA missing.",
   });
@@ -1067,7 +1067,7 @@ export function computeAnomalies(
       id: "asking-below-benchmark-low",
       severity: "watch",
       title: "Asking is below industry benchmark low",
-      detail: `Asking ${fmtCurrency(askingOrPP)} is ${askPct.toFixed(1)}% below the ${input.industry ?? "industry"} benchmark low of ${fmtCurrency(a.valuation.benchmarkLowValue)} — verify motivation, normalize earnings, or flag for hidden defects. Possible causes: hidden customer concentration, owner-as-key-person, deferred CapEx, or the EBITDA being SDE in disguise.`,
+      detail: `Asking ${fmtCurrency(askingOrPP)} is ${askPct.toFixed(1)}% below the ${industryDisplayName(input.industry)} benchmark low of ${fmtCurrency(a.valuation.benchmarkLowValue)} — verify motivation, normalize earnings, or flag for hidden defects. Possible causes: hidden customer concentration, owner-as-key-person, deferred CapEx, or the EBITDA being SDE in disguise.`,
       diligenceTriggers: [
         "Ask the broker why the price is below the comp range",
         "Run normalized add-back review with QoE professional",
@@ -1085,7 +1085,7 @@ export function computeAnomalies(
         id: "margin-above-industry-norm",
         severity: "watch",
         title: "EBITDA margin above industry norm",
-        detail: `Computed EBITDA margin (${fmtPct(a.ebitdaMargin.value)}) is above the ${input.industry} industry high (${fmtPct(norm.max)}). Verify with: (1) owner W-2 add-back, (2) capex run-rate vs depreciation, (3) related-party transactions, (4) one-time revenue events.`,
+        detail: `Computed EBITDA margin (${fmtPct(a.ebitdaMargin.value)}) is above the ${industryDisplayName(input.industry)} industry high (${fmtPct(norm.max)}). Verify with: (1) owner W-2 add-back, (2) capex run-rate vs depreciation, (3) related-party transactions, (4) one-time revenue events.`,
         diligenceTriggers: [
           "Itemize add-backs line by line — flag any owner-personal or one-time items",
           "Tie EBITDA back to tax returns",
@@ -1099,7 +1099,7 @@ export function computeAnomalies(
         id: "margin-below-industry-norm",
         severity: "watch",
         title: "EBITDA margin is below industry norm",
-        detail: `Reported EBITDA margin of ${fmtPct(a.ebitdaMargin.value)} is below the typical ${input.industry} range of ${fmtPct(norm.min)}–${fmtPct(norm.max)}. The deal looks like a turnaround, not a stable cash flow buy.`,
+        detail: `Reported EBITDA margin of ${fmtPct(a.ebitdaMargin.value)} is below the typical ${industryDisplayName(input.industry)} range of ${fmtPct(norm.min)}–${fmtPct(norm.max)}. The deal looks like a turnaround, not a stable cash flow buy.`,
         diligenceTriggers: [
           "Identify which cost line is out of range (COGS, labor, SG&A)",
           "Build a margin-recovery plan before relying on post-close EBITDA",

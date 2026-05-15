@@ -321,8 +321,9 @@ export interface DealScoreContribution {
 }
 
 export interface DealScoreResult {
-  status: "scored" | "blocked" | "review_required";
-  score: number;
+  status: "scored" | "blocked" | "review_required" | "cannot_underwrite";
+  /** null when status === "cannot_underwrite" (e.g. capital stack invalid). */
+  score: number | null;
   contributions: DealScoreContribution[];
   capsApplied: string[];
   blockerReason?: string;
@@ -823,6 +824,11 @@ export interface DealAnalysis {
    * "Challenge my assumptions" and by the Red Team objections page.
    */
   anomalies: DealAnomaly[];
+
+  /** Iteration 9 — PE-grade 5-year returns projection with IRR/MOIC and a
+   * sensitivity grid on (exit multiple × revenue growth). Always present;
+   * `peReturns.available` is false when inputs are insufficient. */
+  peReturns: import("./peReturns").PEReturnsResult;
 }
 
 export type DealAnomalySeverity = "info" | "watch" | "critical";

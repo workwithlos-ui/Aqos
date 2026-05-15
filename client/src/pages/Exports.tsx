@@ -6,8 +6,9 @@ import { generateExport, type ExportKind } from "@/lib/acquisition/exports";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Streamdown } from "streamdown";
-import { Copy, Download } from "lucide-react";
+import { Copy, Download, FileText } from "lucide-react";
 import { toast } from "sonner";
+import { buildLOIDocx, defaultLOIFields } from "@/lib/acquisition/loiDocx";
 
 const KINDS: Array<{ id: ExportKind; label: string; desc: string }> = [
   { id: "ic-memo", label: "Investment Committee Memo", desc: "Full deterministic underwriting memo." },
@@ -23,12 +24,24 @@ export default function Exports() {
   const { deals, assumptions, activeDealId, setActiveDealId } = useDealStore();
   const [kind, setKind] = useState<ExportKind>("ic-memo");
 
-  // Route param wins over store; otherwise the store's active deal id wins.
+  // P0.2 Iteration 9 — The route param is a ONE-TIME initializer only. Once
+  // the user changes the dropdown, the store's active deal id is the single
+  // source of truth. Without this fix, params.id stayed pinned forever and
+  // the second dropdown switch was ignored ("Smoke → Bluefield retains old
+  // company name" bug).
+  const [routeInitialized, setRouteInitialized] = useState(false);
   useEffect(() => {
-    if (params.id && params.id !== activeDealId) setActiveDealId(params.id);
-  }, [params.id, activeDealId, setActiveDealId]);
+    if (!routeInitialized && params.id && params.id !== activeDealId) {
+      setActiveDealId(params.id);
+    }
+    if (params.id || routeInitialized === false) setRouteInitialized(true);
+  }, [params.id, activeDealId, setActiveDealId, routeInitialized]);
 
-  const dealId = params.id ?? activeDealId ?? deals.find((d) => !d.isTest)?.id ?? "";
+  const dealId =
+    activeDealId ??
+    params.id ??
+    deals.find((d) => !d.isTest)?.id ??
+    "";
 
   // Always look up by id at render time (no stale ref). Key analysis on
   // both id + updatedAt + a stable JSON snapshot so any change to the deal
@@ -77,10 +90,13 @@ export default function Exports() {
             is invented.
           </p>
         </div>
-        {deal && (
-          <div className="text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md border border-border">
+        {analysis && (
+          <div
+            className="text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md border border-border"
+            data-testid="exports-active-deal-name"
+          >
             <span className="font-medium text-foreground">Currently exporting:</span>{" "}
-            <span className="font-mono">{deal.companyName?.trim() || "Untitled deal"}</span>
+            <span className="font-mono">{analysis.companyName?.trim() || "Untitled deal"}</span>
           </div>
         )}
       </header>
@@ -130,6 +146,29 @@ export default function Exports() {
                 <div className="flex gap-2">
                   <Button variant="outline" className="bg-card" onClick={copy}><Copy className="size-4 mr-1.5" /> Copy</Button>
                   <Button onClick={download}><Download className="size-4 mr-1.5" /> Download .md</Button>
+                  {deal && analysis && (
+                    <Button
+                      variant="outline"
+                      className="bg-card"
+                      data-testid="download-loi-docx"
+                      onClick={async () => {
+                        try {
+                          const { blob, filename } = await buildLOIDocx(deal, analysis, defaultLOIFields());
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = filename;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          toast.success(`Downloaded ${filename}`);
+                        } catch (err) {
+                          toast.error("LOI generation failed: " + String(err));
+                        }
+                      }}
+                    >
+                      <FileText className="size-4 mr-1.5" /> Download LOI (.docx)
+                    </Button>
+                  )}
                 </div>
               </div>
               <div className="prose prose-sm dark:prose-invert max-w-none p-6 overflow-auto">

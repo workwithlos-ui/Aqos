@@ -260,7 +260,7 @@ export function buildAdvisorDealContext(a: DealAnalysis): AdvisorDealContext {
     riskTotal: a.risk.totalFactors,
     riskCompletenessLabel: a.risk.riskCompletenessLabel,
     riskConfidence: a.risk.riskConfidence,
-    scoreOutOf100: Math.round(a.score.score),
+    scoreOutOf100: Math.round((a.score.score) ?? 0),
     scoreLabel: a.scoreLabel,
     isPreliminary: a.verdict.isPreliminary,
     scoreBucket: a.finalBucket,

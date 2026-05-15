@@ -1214,7 +1214,7 @@ describe("Iteration 8 — AnomalyBus + imputation + WC peg fix", () => {
       buyerEquityPct: 0.1,
     } as any);
     expect(a.finalBucket).toBe("Cannot Underwrite");
-    expect(a.score.score).toBe(0);
+    expect(a.score.score).toBeNull();
     expect(a.dscr.value).toBeNull();
     expect(a.dscrPair.afterStandby.value).toBeNull();
     expect(a.finalBucketReason).toMatch(/105/);
@@ -1225,5 +1225,181 @@ describe("Iteration 8 — AnomalyBus + imputation + WC peg fix", () => {
     const m = a.assumptionBadges.find((b) => b.field === "EBITDA Margin");
     expect(m?.status).toBe("needs-verification");
     expect(m?.detail.toLowerCase()).toContain("above");
+  });
+});
+
+
+// ─── Iteration 9 — P0 regression locks + PE returns + LOI ──────────────────
+import { computeIRR, computePEReturns } from "../peReturns";
+import { buildLOIDocx, defaultLOIFields } from "../loiDocx";
+import { industryDisplayName } from "../industryDefaults";
+
+describe("Iteration 9 — P0.1 Test 10 (invalid capital stack short-circuit)", () => {
+  it("forces verdict to CANNOT UNDERWRITE and nulls score + DSCR display", () => {
+    const a = analyzeDeal(
+      {
+        id: "t10",
+        companyName: "Invalid Stack Co",
+        industry: "hvac",
+        annualRevenue: 2_500_000,
+        annualEBITDA: 500_000,
+        askingPrice: 1_750_000,
+      },
+      {
+        sbaPct: 0.75,
+        sellerNotePct: 0.2,
+        equityPct: 0.1, // 105% stack
+      } as any,
+    );
+    expect(a.verdict.verdict).toBe("CANNOT UNDERWRITE");
+    // Refined verdict may be 'Cannot Underwrite' OR 'Walk Away' — both correctly
+    // signal the deal cannot proceed. Either is acceptable here.
+    expect(["Cannot Underwrite", "Walk Away"]).toContain(a.refinedVerdict.verdict);
+    expect(a.score.score).toBeNull();
+    expect(a.dscr.value).toBeNull();
+    expect(a.dscrPair.afterStandby.value).toBeNull();
+    expect(a.dscrPair.duringStandby.value).toBeNull();
+    expect(a.finalBucket).toBe("Cannot Underwrite");
+  });
+});
+
+describe("Iteration 9 — P0.2 Exports bidirectional binding", () => {
+  it("analyzeDeal produces deal-specific output for every distinct DealInput, regardless of call order", () => {
+    const a = {
+      id: "a", companyName: "Alpha HVAC", industry: "hvac",
+      annualRevenue: 2_500_000, annualEBITDA: 500_000, askingPrice: 1_750_000,
+    };
+    const b = {
+      id: "b", companyName: "Bravo Plumbing", industry: "plumbing",
+      annualRevenue: 3_400_000, annualEBITDA: 820_000, askingPrice: 2_950_000,
+    };
+    // Simulate dropdown switches: A → B → A → B → A
+    const seq = [a, b, a, b, a];
+    const results = seq.map((d) => analyzeDeal(d));
+    results.forEach((r, i) => {
+      expect(r.companyName).toBe(seq[i].companyName);
+      expect(r.normalizedPurchasePrice).toBe(seq[i].askingPrice);
+    });
+  });
+});
+
+describe("Iteration 9 — P0.3 negative buyer cash flow forces ≤ RENEGOTIATE", () => {
+  it("smoke test HVAC deal with imputed CapEx + WC turns buyer cash flow negative and escalates verdict", () => {
+    const a = analyzeDeal({
+      id: "neg",
+      companyName: "Negative CF Co",
+      industry: "hvac",
+      annualRevenue: 2_500_000,
+      annualEBITDA: 500_000,
+      askingPrice: 1_750_000,
+    });
+    // CapEx imputed at 2.5% = $62,500, WC reserve at 7% = $175,000
+    expect(a.buyerCashFlow.requiredCapEx).toBeCloseTo(62_500, -2);
+    expect(a.buyerCashFlow.workingCapitalReserve).toBeCloseTo(175_000, -2);
+    // Buyer cash flow after standby is negative
+    expect(a.buyerCashFlow.buyerCashFlow.value).toBeLessThan(0);
+    // Refined verdict must NOT be "Pursue Aggressively" or "Pursue with Conditions"
+    const allowed = ["Renegotiate", "Walk Away", "Cannot Underwrite"];
+    expect(allowed).toContain(a.refinedVerdict.verdict);
+    // Top-line verdict must not be ACQUISITION PRIORITY when buyer CF is negative
+    expect(a.verdict.verdict).not.toBe("ACQUISITION PRIORITY");
+  });
+});
+
+describe("Iteration 9 — P0.4 industry display name capitalization", () => {
+  it("industryDisplayName returns properly cased label", () => {
+    expect(industryDisplayName("hvac")).toBe("HVAC");
+    expect(industryDisplayName("plumbing")).toBe("Plumbing");
+    expect(industryDisplayName("it services")).toBe("IT Services");
+    expect(industryDisplayName("auto repair")).toBe("Auto Repair");
+  });
+  it("anomaly text never includes the lowercase industry token", () => {
+    const a = analyzeDeal({
+      id: "cap",
+      companyName: "Cap Test",
+      industry: "hvac",
+      annualRevenue: 2_500_000,
+      annualEBITDA: 500_000,
+      askingPrice: 1_750_000,
+    });
+    const allText = a.anomalies.map((x) => `${x.title} ${x.detail}`).join(" | ");
+    // Asking-below-benchmark anomaly should fire and mention HVAC (not "hvac")
+    expect(allText).toMatch(/HVAC/);
+    // Make sure the bare lowercase token is not present in user-visible strings
+    expect(allText.includes(" hvac ")).toBe(false);
+    expect(allText.includes("hvac benchmark")).toBe(false);
+  });
+});
+
+describe("Iteration 9 — PE-grade returns (IRR / MOIC / sensitivity)", () => {
+  it("computeIRR matches a known-good cash flow stream", () => {
+    // Outflow $1M, four years of $250K plus a terminal +$500K = Excel IRR ~14.98%.
+    const cf = [-1_000_000, 250_000, 250_000, 250_000, 250_000 + 500_000];
+    const irr = computeIRR(cf)!;
+    expect(irr).toBeGreaterThan(0.14);
+    expect(irr).toBeLessThan(0.16);
+  });
+  it("HVAC smoke deal yields finite IRR + MOIC across bear/base/bull scenarios", () => {
+    const a = analyzeDeal({
+      id: "pe",
+      companyName: "PE Test HVAC",
+      industry: "hvac",
+      annualRevenue: 2_500_000,
+      annualEBITDA: 500_000,
+      askingPrice: 1_750_000,
+    });
+    const pe = a.peReturns;
+    expect(pe.available).toBe(true);
+    [pe.bear, pe.base, pe.bull].forEach((s) => {
+      expect(s.rows.length).toBe(6); // year 0..5
+      expect(Number.isFinite(s.exitEnterpriseValue)).toBe(true);
+      // base case should produce a finite, plausible IRR
+      if (s.label === "Base") {
+        expect(s.irr).not.toBeNull();
+        expect(s.moic).not.toBeNull();
+      }
+    });
+    // Sensitivity grid 5×5
+    expect(pe.sensitivity.exitMultiples.length).toBe(5);
+    expect(pe.sensitivity.revenueGrowths.length).toBe(5);
+    expect(pe.sensitivity.cells.length).toBe(5);
+    pe.sensitivity.cells.forEach((row) => expect(row.length).toBe(5));
+  });
+  it("returns peReturns.available=false when buyer equity is zero", () => {
+    const a = analyzeDeal(
+      {
+        id: "pe-bad",
+        companyName: "Insufficient",
+        industry: "hvac",
+        annualRevenue: 2_500_000,
+        annualEBITDA: 500_000,
+        askingPrice: 1_750_000,
+      },
+      { sbaPct: 0.9, sellerNotePct: 0.1, equityPct: 0 } as any,
+    );
+    expect(a.peReturns.available).toBe(false);
+  });
+});
+
+describe("Iteration 9 — LOI .docx generator", () => {
+  it("builds a downloadable Blob with the correct filename and non-empty body", async () => {
+    const input = {
+      id: "loi",
+      companyName: "Bluefield HVAC",
+      industry: "hvac",
+      annualRevenue: 2_500_000,
+      annualEBITDA: 500_000,
+      askingPrice: 1_750_000,
+    };
+    const a = analyzeDeal(input);
+    const { blob, filename } = await buildLOIDocx(input, a, defaultLOIFields());
+    expect(filename).toBe("bluefield-hvac-loi.docx");
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.size).toBeGreaterThan(2000); // a real docx has >2KB minimum
+    // .docx is a zip; first bytes are PK\x03\x04
+    const buf = await blob.arrayBuffer();
+    const u8 = new Uint8Array(buf);
+    expect(u8[0]).toBe(0x50); // P
+    expect(u8[1]).toBe(0x4b); // K
   });
 });
