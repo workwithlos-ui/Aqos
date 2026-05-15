@@ -23,6 +23,7 @@ export default function Exports() {
   const params = useParams<{ id?: string }>();
   const { deals, assumptions, activeDealId, setActiveDealId } = useDealStore();
   const [kind, setKind] = useState<ExportKind>("ic-memo");
+  const [renderKey, setRenderKey] = useState(0); // Force re-render on deal change
 
   // P0.2 Iteration 9 — The route param is a ONE-TIME initializer only. Once
   // the user changes the dropdown, the store's active deal id is the single
@@ -60,6 +61,11 @@ export default function Exports() {
     () => (analysis ? generateExport(kind, analysis) : null),
     [analysis, kind],
   );
+
+  // Force re-render on dealId change to invalidate memos
+  useEffect(() => {
+    setRenderKey((k) => k + 1);
+  }, [dealId]);
 
   function copy() {
     if (!payload) return;
