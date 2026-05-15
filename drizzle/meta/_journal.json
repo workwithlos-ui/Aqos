@@ -36,6 +36,13 @@
       "when": 1778834194050,
       "tag": "0004_little_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1778835384701,
+      "tag": "0005_broad_shadow_king",
+      "breakpoints": true
     }
   ]
 }

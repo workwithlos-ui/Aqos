@@ -39,7 +39,12 @@ export type Permission =
   | "comment.delete_any"
   | "comment.resolve"
   | "comment.set_blocker"
-  | "notification.read";
+  | "notification.read"
+  | "conflict.declare"
+  | "conflict.withdraw_own"
+  | "conflict.withdraw_any"
+  | "conflict.acknowledge"
+  | "conflict.view";
 
 const PARTNER_PERMS: Permission[] = [
   "deal.create",
@@ -61,6 +66,11 @@ const PARTNER_PERMS: Permission[] = [
   "comment.resolve",
   "comment.set_blocker",
   "notification.read",
+  "conflict.declare",
+  "conflict.withdraw_own",
+  "conflict.withdraw_any",
+  "conflict.acknowledge",
+  "conflict.view",
 ];
 
 const ANALYST_PERMS: Permission[] = [
@@ -73,10 +83,16 @@ const ANALYST_PERMS: Permission[] = [
   "comment.delete_own",
   "comment.resolve",
   "notification.read",
+  "conflict.declare",
+  "conflict.withdraw_own",
+  "conflict.acknowledge",
+  "conflict.view",
 ];
 
 const OBSERVER_PERMS: Permission[] = [
   "notification.read", // Observers can read notifications but cannot create/edit/delete/resolve/flag comments
+  "conflict.acknowledge", // Observers can acknowledge conflicts (but not declare or withdraw)
+  "conflict.view",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {

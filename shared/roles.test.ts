@@ -66,8 +66,8 @@ describe("roles permission map (Sprint B)", () => {
       for (const p of allPerms) {
         expect(can("observer", p), `observer should NOT have ${p}`).toBe(false);
       }
-      // After Sprint C Phase 1, observer gains notification.read for bell visibility (still read-only)
-      expect(ROLE_PERMISSIONS.observer).toEqual(["notification.read"]);
+      // After Sprint C Phase 1+2, observer gains notification.read + conflict.acknowledge + conflict.view (still read-only)
+      expect(ROLE_PERMISSIONS.observer).toEqual(["notification.read", "conflict.acknowledge", "conflict.view"]);
     });
 
     it("Partner has every permission", () => {

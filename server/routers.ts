@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { commentsRouter, notificationsRouter } from "./routers/comments";
 import { complianceRouter } from "./routers/compliance";
+import { conflictsRouter } from "./routers/conflicts";
 import { dealsRouter } from "./routers/deals";
 
 export const appRouter = router({
@@ -22,6 +23,7 @@ export const appRouter = router({
 
   deals: dealsRouter,
   compliance: complianceRouter,
+  conflicts: conflictsRouter,
   comments: commentsRouter,
   notifications: notificationsRouter,
 });

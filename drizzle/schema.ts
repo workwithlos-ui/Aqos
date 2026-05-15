@@ -125,11 +125,15 @@ export type AuditAction =
   | "active_deal.set"
   | "migration.import"
   | "comment.create"
-  | "comment.update"
+  | "comment.edit"
   | "comment.delete"
   | "comment.resolve"
   | "comment.unresolve"
-  | "comment.set_blocker";
+  | "comment.set_blocker"
+  | "notification.created"
+  | "conflict.declare"
+  | "conflict.withdraw"
+  | "conflict.acknowledge";
 
 export type AuditDiffEntry = {
   field: string;
@@ -249,3 +253,62 @@ export const notifications = mysqlTable(
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// CONFLICTS — Per-deal conflict-of-interest disclosures.
+// ---------------------------------------------------------------------------
+
+export const conflictType = ["financial", "personal", "professional", "other"] as const;
+export type ConflictType = (typeof conflictType)[number];
+
+export const conflicts = mysqlTable(
+  "conflicts",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    dealId: varchar("dealId", { length: 64 }).notNull(),
+    orgId: int("orgId").notNull(),
+    declarerOpenId: varchar("declarerOpenId", { length: 64 }).notNull(),
+    declarerName: text("declarerName"),
+    conflictType: mysqlEnum("conflictType", conflictType).notNull(),
+    description: text("description").notNull(),
+    declaredAt: timestamp("declaredAt").defaultNow().notNull(),
+    /** NULL = active. Non-null = withdrawn. */
+    withdrawnAt: timestamp("withdrawnAt"),
+    withdrawnByOpenId: varchar("withdrawnByOpenId", { length: 64 }),
+    withdrawnByName: text("withdrawnByName"),
+    withdrawnReason: text("withdrawnReason"),
+  },
+  (table) => ({
+    dealIdx: index("conflicts_deal_idx").on(table.dealId),
+    orgIdx: index("conflicts_org_idx").on(table.orgId),
+    declarerIdx: index("conflicts_declarer_idx").on(table.declarerOpenId),
+  }),
+);
+
+export type Conflict = typeof conflicts.$inferSelect;
+export type InsertConflict = typeof conflicts.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// CONFLICT_ACKNOWLEDGMENTS — Per-conflict per-user acknowledgment record.
+// ---------------------------------------------------------------------------
+
+export const conflictAcknowledgments = mysqlTable(
+  "conflict_acknowledgments",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    conflictId: bigint("conflictId", { mode: "number" }).notNull(),
+    orgId: int("orgId").notNull(),
+    dealId: varchar("dealId", { length: 64 }).notNull(),
+    acknowledgerOpenId: varchar("acknowledgerOpenId", { length: 64 }).notNull(),
+    acknowledgerName: text("acknowledgerName"),
+    acknowledgedAt: timestamp("acknowledgedAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    conflictIdx: index("conflict_ack_conflict_idx").on(table.conflictId),
+    orgIdx: index("conflict_ack_org_idx").on(table.orgId),
+    uniqueAck: index("conflict_ack_unique_idx").on(table.conflictId, table.acknowledgerOpenId),
+  }),
+);
+
+export type ConflictAcknowledgment = typeof conflictAcknowledgments.$inferSelect;
+export type InsertConflictAcknowledgment = typeof conflictAcknowledgments.$inferInsert;

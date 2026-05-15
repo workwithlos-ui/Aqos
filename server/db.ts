@@ -531,3 +531,170 @@ export async function listAuditEntriesByEntity(
     .orderBy(desc(auditLog.createdAt))
     .limit(limit);
 }
+
+// ---------------------------------------------------------------------------
+// CONFLICTS + ACKNOWLEDGMENTS
+// ---------------------------------------------------------------------------
+
+export async function listConflictsForDeal(orgId: number, dealId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const { conflicts, conflictAcknowledgments } = await import("../drizzle/schema");
+  const rows = await db
+    .select()
+    .from(conflicts)
+    .where(and(eq(conflicts.orgId, orgId), eq(conflicts.dealId, dealId)))
+    .orderBy(desc(conflicts.declaredAt));
+
+  // Attach acknowledgments
+  const conflictIds = rows.map((r) => r.id);
+  if (conflictIds.length === 0) return rows.map((r) => ({ ...r, acknowledgments: [] }));
+
+  const acks = await db
+    .select()
+    .from(conflictAcknowledgments)
+    .where(and(eq(conflictAcknowledgments.orgId, orgId)));
+
+  const acksByConflict = new Map<number, typeof acks>();
+  for (const ack of acks) {
+    if (!acksByConflict.has(ack.conflictId)) acksByConflict.set(ack.conflictId, []);
+    acksByConflict.get(ack.conflictId)!.push(ack);
+  }
+
+  return rows.map((r) => ({ ...r, acknowledgments: acksByConflict.get(r.id) ?? [] }));
+}
+
+export async function insertConflict(insert: {
+  dealId: string;
+  orgId: number;
+  declarerOpenId: string;
+  declarerName: string | null;
+  conflictType: "financial" | "personal" | "professional" | "other";
+  description: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { conflicts } = await import("../drizzle/schema");
+  await db.insert(conflicts).values(insert);
+  // Return the inserted conflict by querying it back
+  const [conflict] = await db
+    .select()
+    .from(conflicts)
+    .where(
+      and(
+        eq(conflicts.orgId, insert.orgId),
+        eq(conflicts.dealId, insert.dealId),
+        eq(conflicts.declarerOpenId, insert.declarerOpenId),
+      ),
+    )
+    .orderBy(desc(conflicts.declaredAt))
+    .limit(1);
+  return conflict;
+}
+
+export async function getConflictById(orgId: number, conflictId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { conflicts } = await import("../drizzle/schema");
+  const [row] = await db
+    .select()
+    .from(conflicts)
+    .where(and(eq(conflicts.id, conflictId), eq(conflicts.orgId, orgId)))
+    .limit(1);
+  return row;
+}
+
+export async function withdrawConflict(
+  orgId: number,
+  conflictId: number,
+  withdrawnByOpenId: string,
+  withdrawnByName: string | null,
+  withdrawnReason: string,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { conflicts } = await import("../drizzle/schema");
+  await db
+    .update(conflicts)
+    .set({
+      withdrawnAt: new Date(),
+      withdrawnByOpenId,
+      withdrawnByName,
+      withdrawnReason,
+    })
+    .where(and(eq(conflicts.id, conflictId), eq(conflicts.orgId, orgId)));
+}
+
+export async function acknowledgeConflict(insert: {
+  conflictId: number;
+  orgId: number;
+  dealId: string;
+  acknowledgerOpenId: string;
+  acknowledgerName: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { conflictAcknowledgments } = await import("../drizzle/schema");
+  // Upsert — ignore duplicate
+  try {
+    await db.insert(conflictAcknowledgments).values(insert);
+  } catch {
+    // Duplicate acknowledgment — silently ignore
+  }
+}
+
+/**
+ * Returns true if all active (non-withdrawn) conflicts for this deal have been
+ * acknowledged by all Partners in the org.
+ */
+export async function hasUnacknowledgedConflictsForPartners(
+  orgId: number,
+  dealId: string,
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const { conflicts, conflictAcknowledgments, users } = await import("../drizzle/schema");
+
+  // Get active conflicts
+  const activeConflicts = await db
+    .select()
+    .from(conflicts)
+    .where(
+      and(
+        eq(conflicts.orgId, orgId),
+        eq(conflicts.dealId, dealId),
+        isNull(conflicts.withdrawnAt),
+      ),
+    );
+
+  if (activeConflicts.length === 0) return false;
+
+  // Get all Partners in org
+  const partners = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.orgId, orgId)));
+  const partnerOpenIds = partners
+    .filter((u) => u.role === "partner" || u.role === "admin")
+    .map((u) => u.openId);
+
+  if (partnerOpenIds.length === 0) return false;
+
+  // Get all acks for this deal
+  const acks = await db
+    .select()
+    .from(conflictAcknowledgments)
+    .where(and(eq(conflictAcknowledgments.orgId, orgId), eq(conflictAcknowledgments.dealId, dealId)));
+
+  const ackSet = new Set(acks.map((a) => `${a.conflictId}:${a.acknowledgerOpenId}`));
+
+  for (const conflict of activeConflicts) {
+    for (const partnerId of partnerOpenIds) {
+      // Declarer's own conflict is auto-acknowledged (they declared it)
+      if (conflict.declarerOpenId === partnerId) continue;
+      if (!ackSet.has(`${conflict.id}:${partnerId}`)) return true; // unacknowledged
+    }
+  }
+
+  return false;
+}
