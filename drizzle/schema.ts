@@ -133,7 +133,12 @@ export type AuditAction =
   | "notification.created"
   | "conflict.declare"
   | "conflict.withdraw"
-  | "conflict.acknowledge";
+  | "conflict.acknowledge"
+  | "vote.open"
+  | "vote.close"
+  | "vote.reopen"
+  | "ballot.cast"
+  | "ballot.change";
 
 export type AuditDiffEntry = {
   field: string;
@@ -312,3 +317,82 @@ export const conflictAcknowledgments = mysqlTable(
 
 export type ConflictAcknowledgment = typeof conflictAcknowledgments.$inferSelect;
 export type InsertConflictAcknowledgment = typeof conflictAcknowledgments.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// VOTES + BALLOTS — IC voting state machine (Phase 3a MVP).
+// ---------------------------------------------------------------------------
+
+export const voteState = ["NOT_STARTED", "OPEN", "CLOSED", "REOPENED"] as const;
+export type VoteState = (typeof voteState)[number];
+
+export const ballotChoice = ["APPROVE", "REJECT", "ABSTAIN", "REQUEST_CHANGES"] as const;
+export type BallotChoice = (typeof ballotChoice)[number];
+
+export const voteOutcome = [
+  "APPROVED",
+  "REJECTED",
+  "CHANGES_REQUESTED",
+  "NO_QUORUM",
+  "PENDING",
+] as const;
+export type VoteOutcome = (typeof voteOutcome)[number];
+
+export const votes = mysqlTable(
+  "votes",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    dealId: varchar("dealId", { length: 64 }).notNull(),
+    orgId: int("orgId").notNull(),
+    state: mysqlEnum("state", voteState).default("NOT_STARTED").notNull(),
+    openedAt: timestamp("openedAt"),
+    openedByOpenId: varchar("openedByOpenId", { length: 64 }),
+    openedByName: text("openedByName"),
+    deadlineAt: timestamp("deadlineAt"),
+    closedAt: timestamp("closedAt"),
+    closedByOpenId: varchar("closedByOpenId", { length: 64 }),
+    closedByName: text("closedByName"),
+    reopenedAt: timestamp("reopenedAt"),
+    reopenedByOpenId: varchar("reopenedByOpenId", { length: 64 }),
+    reopenedByName: text("reopenedByName"),
+    reopenReason: text("reopenReason"),
+    reopenCount: int("reopenCount").default(0).notNull(),
+    outcome: mysqlEnum("outcome", voteOutcome).default("PENDING").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    dealIdx: index("votes_deal_idx").on(table.dealId),
+    orgIdx: index("votes_org_idx").on(table.orgId),
+    stateIdx: index("votes_state_idx").on(table.state),
+  }),
+);
+
+export type Vote = typeof votes.$inferSelect;
+export type InsertVote = typeof votes.$inferInsert;
+
+// ---------------------------------------------------------------------------
+
+export const ballots = mysqlTable(
+  "ballots",
+  {
+    id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+    voteId: bigint("voteId", { mode: "number" }).notNull(),
+    dealId: varchar("dealId", { length: 64 }).notNull(),
+    orgId: int("orgId").notNull(),
+    voterOpenId: varchar("voterOpenId", { length: 64 }).notNull(),
+    voterName: text("voterName"),
+    choice: mysqlEnum("choice", ballotChoice).notNull(),
+    rationale: text("rationale"),
+    castAt: timestamp("castAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    voteIdx: index("ballots_vote_idx").on(table.voteId),
+    dealIdx: index("ballots_deal_idx").on(table.dealId),
+    voterIdx: index("ballots_voter_idx").on(table.voterOpenId),
+    uniqueBallot: index("ballots_unique_idx").on(table.voteId, table.voterOpenId),
+  }),
+);
+
+export type Ballot = typeof ballots.$inferSelect;
+export type InsertBallot = typeof ballots.$inferInsert;

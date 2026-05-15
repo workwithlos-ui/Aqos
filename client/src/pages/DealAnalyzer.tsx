@@ -21,6 +21,7 @@ import { getIndustryDefault } from "@/lib/acquisition/industryDefaults";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, Save, Trash2, TrendingDown, CheckCircle2, XCircle, Info } from "lucide-react";
 import { CommentThread } from "@/components/acq/CommentThread";
+import { VotePanel } from "@/components/acq/VotePanel";
 
 const EMPTY: DealInput = {
   companyName: "",
@@ -1017,6 +1018,9 @@ export default function DealAnalyzer() {
           </div>
 
           {/* ── Comments Thread ────────────────────────────────────────── */}
+          <div className="panel p-6">
+            <VotePanel dealId={params.id ?? ""} />
+          </div>
           <div className="panel p-6">
             <CommentThread dealId={params.id ?? ""} />
           </div>

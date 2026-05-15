@@ -43,6 +43,13 @@
       "when": 1778835384701,
       "tag": "0005_broad_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1778835871801,
+      "tag": "0006_mushy_solo",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,7 @@ import { commentsRouter, notificationsRouter } from "./routers/comments";
 import { complianceRouter } from "./routers/compliance";
 import { conflictsRouter } from "./routers/conflicts";
 import { dealsRouter } from "./routers/deals";
+import { votesRouter } from "./routers/votes";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -24,6 +25,7 @@ export const appRouter = router({
   deals: dealsRouter,
   compliance: complianceRouter,
   conflicts: conflictsRouter,
+  votes: votesRouter,
   comments: commentsRouter,
   notifications: notificationsRouter,
 });

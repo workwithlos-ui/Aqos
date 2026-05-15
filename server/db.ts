@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   AuditDiffEntry,
@@ -697,4 +697,175 @@ export async function hasUnacknowledgedConflictsForPartners(
   }
 
   return false;
+}
+
+
+// ---------------------------------------------------------------------------
+// VOTES + BALLOTS — IC voting state machine helpers (Phase 3a)
+// ---------------------------------------------------------------------------
+
+export async function listUsersByOrgAndRole(orgId: number, roles: string[]) {
+  const db = await getDb();
+  if (!db) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = await db.select().from(users).where(and(eq(users.orgId, orgId), inArray(users.role as any, roles)));
+  return rows;
+}
+
+export async function openVote(
+  dealId: string,
+  orgId: number,
+  actorOpenId: string,
+  actorName: string | null,
+  deadlineAt: Date,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { votes } = await import("../drizzle/schema");
+
+  await db.insert(votes).values({
+    dealId,
+    orgId,
+    state: "OPEN",
+    openedAt: new Date(),
+    openedByOpenId: actorOpenId,
+    openedByName: actorName,
+    deadlineAt,
+  });
+
+  const [vote] = await db
+    .select()
+    .from(votes)
+    .where(and(eq(votes.dealId, dealId), eq(votes.orgId, orgId)))
+    .orderBy(desc(votes.createdAt))
+    .limit(1);
+  return vote;
+}
+
+export async function castBallot(
+  voteId: number,
+  dealId: string,
+  orgId: number,
+  voterOpenId: string,
+  voterName: string | null,
+  choice: "APPROVE" | "REJECT" | "ABSTAIN" | "REQUEST_CHANGES",
+  rationale: string | null,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { ballots } = await import("../drizzle/schema");
+
+  await db
+    .insert(ballots)
+    .values({ voteId, dealId, orgId, voterOpenId, voterName, choice, rationale })
+    .onDuplicateKeyUpdate({ set: { choice, rationale, updatedAt: new Date() } });
+
+  const [ballot] = await db
+    .select()
+    .from(ballots)
+    .where(and(eq(ballots.voteId, voteId), eq(ballots.voterOpenId, voterOpenId)))
+    .limit(1);
+  return ballot;
+}
+
+export async function closeVote(voteId: number, actorOpenId: string, actorName: string | null) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { votes } = await import("../drizzle/schema");
+
+  await db
+    .update(votes)
+    .set({ state: "CLOSED", closedAt: new Date(), closedByOpenId: actorOpenId, closedByName: actorName })
+    .where(eq(votes.id, voteId));
+  const [vote] = await db.select().from(votes).where(eq(votes.id, voteId));
+  return vote;
+}
+
+export async function reopenVote(
+  voteId: number,
+  actorOpenId: string,
+  actorName: string | null,
+  reason: string,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const { votes } = await import("../drizzle/schema");
+
+  await db
+    .update(votes)
+    .set({
+      state: "REOPENED",
+      reopenedAt: new Date(),
+      reopenedByOpenId: actorOpenId,
+      reopenedByName: actorName,
+      reopenReason: reason,
+      reopenCount: sql`${votes.reopenCount} + 1`,
+    })
+    .where(eq(votes.id, voteId));
+  const [vote] = await db.select().from(votes).where(eq(votes.id, voteId));
+  return vote;
+}
+
+export async function getVoteById(voteId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { votes } = await import("../drizzle/schema");
+  const [vote] = await db.select().from(votes).where(eq(votes.id, voteId));
+  return vote;
+}
+
+export async function getVoteForDeal(dealId: string, orgId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { votes } = await import("../drizzle/schema");
+  const [vote] = await db
+    .select()
+    .from(votes)
+    .where(and(eq(votes.dealId, dealId), eq(votes.orgId, orgId)))
+    .orderBy(desc(votes.createdAt))
+    .limit(1);
+  return vote;
+}
+
+export async function listBallotsForVote(voteId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const { ballots } = await import("../drizzle/schema");
+  const rows = await db.select().from(ballots).where(eq(ballots.voteId, voteId));
+  return rows;
+}
+
+export async function computeVoteOutcome(voteId: number, orgId: number) {
+  const db = await getDb();
+  if (!db) return "PENDING" as const;
+  const { ballots } = await import("../drizzle/schema");
+
+  const allBallots = await db.select().from(ballots).where(eq(ballots.voteId, voteId));
+  const partners = await listUsersByOrgAndRole(orgId, ["partner", "admin"]);
+
+  const quorumThreshold = Math.ceil(partners.length * 0.6);
+  const majorityThreshold = Math.floor(partners.length * 0.5) + 1;
+
+  if (allBallots.some((b) => b.choice === "REQUEST_CHANGES")) return "CHANGES_REQUESTED" as const;
+
+  const approves = allBallots.filter((b) => b.choice === "APPROVE").length;
+  const rejects = allBallots.filter((b) => b.choice === "REJECT").length;
+  const abstains = allBallots.filter((b) => b.choice === "ABSTAIN").length;
+  const totalCast = approves + rejects + abstains;
+
+  if (totalCast < quorumThreshold) return "NO_QUORUM" as const;
+  if (approves >= majorityThreshold) return "APPROVED" as const;
+  if (rejects >= majorityThreshold) return "REJECTED" as const;
+  return approves > rejects ? ("APPROVED" as const) : ("REJECTED" as const);
+}
+
+export async function getDealById(orgId: number, dealId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [deal] = await db
+    .select()
+    .from(deals)
+    .where(and(eq(deals.orgId, orgId), eq(deals.dealId, dealId)))
+    .limit(1);
+  return deal;
 }

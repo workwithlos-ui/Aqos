@@ -44,7 +44,11 @@ export type Permission =
   | "conflict.withdraw_own"
   | "conflict.withdraw_any"
   | "conflict.acknowledge"
-  | "conflict.view";
+  | "conflict.view"
+  | "vote.open"
+  | "vote.close"
+  | "vote.reopen"
+  | "ballot.cast";
 
 const PARTNER_PERMS: Permission[] = [
   "deal.create",
@@ -71,6 +75,10 @@ const PARTNER_PERMS: Permission[] = [
   "conflict.withdraw_any",
   "conflict.acknowledge",
   "conflict.view",
+  "vote.open",
+  "vote.close",
+  "vote.reopen",
+  "ballot.cast",
 ];
 
 const ANALYST_PERMS: Permission[] = [
@@ -87,6 +95,7 @@ const ANALYST_PERMS: Permission[] = [
   "conflict.withdraw_own",
   "conflict.acknowledge",
   "conflict.view",
+  "ballot.cast",
 ];
 
 const OBSERVER_PERMS: Permission[] = [
